@@ -19,13 +19,140 @@
     </x-slot>
 
     <div class="app-page--flush">
-        <div class="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col px-0 sm:px-2">
+        <div
+            class="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col px-0 sm:px-2"
+            x-data="{ mobileListOpen: {{ $showThreadMobile ? 'false' : 'true' }} }"
+        >
             <div
                 class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border-0 bg-white shadow-md sm:rounded-2xl sm:border sm:border-slate-200/90 md:flex-row md:min-h-[28rem]"
                 style="min-height: min(520px, calc(100dvh - 11rem)); max-height: min(900px, calc(100dvh - 7rem));"
             >
                 {{-- Conversation list --}}
-                <aside class="flex max-h-[46vh] w-full shrink-0 flex-col border-b border-slate-200 bg-white md:max-h-none md:w-[min(100%,320px)] md:border-b-0 md:border-e {{ $showThreadMobile ? 'hidden md:flex' : 'flex' }}">
+                {{-- Mobile drawer backdrop --}}
+                <div
+                    class="fixed inset-0 z-20 bg-slate-900/40 backdrop-blur-[1px] md:hidden"
+                    x-show="mobileListOpen"
+                    x-transition.opacity
+                    x-on:click="mobileListOpen = false"
+                    x-cloak
+                    aria-hidden="true"
+                ></div>
+
+                {{-- Mobile drawer list --}}
+                <aside
+                    class="fixed inset-x-0 top-0 bottom-0 z-30 flex w-full shrink-0 flex-col border-b border-slate-200 bg-white shadow-2xl md:hidden"
+                    x-show="mobileListOpen"
+                    x-transition
+                    x-cloak
+                >
+                    <div class="border-b border-slate-100 bg-slate-50/95 px-3 py-3 sm:px-4">
+                        <div class="flex items-center justify-between gap-2">
+                            <div>
+                                <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">{{ __('Inbox') }}</p>
+                                <p class="mt-0.5 text-[11px] text-slate-400">{{ __('All WhatsApp & Messenger lines') }}</p>
+                            </div>
+                            <button
+                                type="button"
+                                class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 md:hidden"
+                                x-on:click="mobileListOpen = false"
+                                title="{{ __('Close') }}"
+                            >
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                            @if (auth()->user()->allows('connections.manage'))
+                                <a href="{{ route('connections.index') }}" class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50" title="{{ __('Manage connections') }}">
+                                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                                    <span class="hidden sm:inline">{{ __('Connections') }}</span>
+                                </a>
+                            @endif
+                        </div>
+
+                        {{-- Filters --}}
+                        <div class="mt-3 flex flex-col gap-2">
+                            <div class="flex flex-wrap gap-1.5">
+                                <a href="{{ route('inbox', array_filter(['account' => request('account')])) }}" class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold {{ ($assigneeFilter ?? 'all') === 'all' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50' }}">
+                                    <svg class="h-3.5 w-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                                    {{ __('All') }}
+                                </a>
+                                <a href="{{ route('inbox', array_filter(['assignee' => 'me', 'account' => request('account')])) }}" class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold {{ ($assigneeFilter ?? '') === 'me' ? 'bg-emerald-700 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50' }}">
+                                    <svg class="h-3.5 w-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                                    {{ __('Mine') }}
+                                </a>
+                                <a href="{{ route('inbox', array_filter(['assignee' => 'unassigned', 'account' => request('account')])) }}" class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold {{ ($assigneeFilter ?? '') === 'unassigned' ? 'bg-amber-600 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50' }}">
+                                    <svg class="h-3.5 w-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                                    {{ __('Unassigned') }}
+                                </a>
+                            </div>
+                            <label class="block">
+                                <span class="sr-only">{{ __('Filter by account') }}</span>
+                                <div class="relative">
+                                    <span class="pointer-events-none absolute inset-y-0 start-0 flex items-center ps-2 text-slate-400">
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                                    </span>
+                                    <select
+                                        class="block w-full rounded-lg border-slate-200 py-2 ps-8 text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500"
+                                        onchange="if (this.value) window.location.href = this.value"
+                                    >
+                                        @php
+                                            $accBase = array_filter(['assignee' => request('assignee')], fn ($v) => $v !== null && $v !== '');
+                                        @endphp
+                                        <option value="{{ route('inbox', $accBase) }}">{{ __('All connections') }}</option>
+                                        @foreach ($channelAccounts as $ca)
+                                            <option
+                                                value="{{ route('inbox', array_merge($accBase, ['account' => $ca->id])) }}"
+                                                @selected((string) $selectedAccountId === (string) $ca->id)
+                                            >
+                                                {{ $ca->name }} ({{ $ca->type === 'whatsapp' ? 'WA' : 'MS' }})
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="min-h-0 flex-1 overflow-y-auto">
+                        @forelse ($conversations as $c)
+                            <a href="{{ route('inbox', array_filter(['conversation' => $c->id, 'assignee' => request('assignee'), 'account' => request('account')])) }}"
+                               x-on:click="mobileListOpen = false"
+                               class="flex items-center gap-3 border-b border-slate-50 px-3 py-3 transition-colors hover:bg-slate-50 sm:px-4 {{ $active && $active->id === $c->id ? 'border-s-[3px] border-s-emerald-600 bg-emerald-50/90' : '' }}">
+                                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white shadow-inner
+                                    {{ $c->platform === 'whatsapp' ? 'bg-gradient-to-br from-green-500 to-green-700' : 'bg-gradient-to-br from-blue-500 to-blue-700' }}">
+                                    {{ strtoupper(mb_substr((string) ($c->display_name ?? $c->external_thread_key), 0, 1)) }}
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <span class="truncate font-medium text-slate-900">{{ $c->display_name ?? $c->external_thread_key }}</span>
+                                        <span class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide
+                                            {{ $c->platform === 'whatsapp' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800' }}">
+                                            {{ $c->platform === 'whatsapp' ? 'WA' : 'FB' }}
+                                        </span>
+                                    </div>
+                                    @if ($c->channelAccount)
+                                        <p class="truncate text-[11px] text-slate-500">{{ $c->channelAccount->name }}</p>
+                                    @endif
+                                    <div class="mt-0.5 flex flex-wrap items-center gap-1.5">
+                                        @if ($c->assignee)
+                                            <span class="inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-800">
+                                                <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                                {{ $c->assignee->name }}
+                                            </span>
+                                        @else
+                                            <span class="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900">
+                                                {{ __('Unassigned') }}
+                                            </span>
+                                        @endif
+                                        <span class="text-[10px] text-slate-400">{{ $c->last_message_at?->diffForHumans() ?? '—' }}</span>
+                                    </div>
+                                </div>
+                            </a>
+                        @empty
+                            <p class="p-6 text-center text-sm text-slate-500">{{ __('No conversations match these filters.') }}</p>
+                        @endforelse
+                    </div>
+                </aside>
+
+                {{-- Desktop list --}}
+                <aside class="hidden w-full shrink-0 flex-col border-b border-slate-200 bg-white md:flex md:max-h-none md:w-[min(100%,320px)] md:border-b-0 md:border-e">
                     <div class="border-b border-slate-100 bg-slate-50/95 px-3 py-3 sm:px-4">
                         <div class="flex items-center justify-between gap-2">
                             <div>
@@ -136,9 +263,15 @@
                             class="z-10 flex shrink-0 flex-wrap items-center gap-2 px-3 py-2.5 {{ $headerClass }} text-white shadow-md sm:px-4"
                             role="banner"
                         >
-                            <a href="{{ route('inbox', array_filter(['assignee' => request('assignee'), 'account' => request('account')])) }}" class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25 md:hidden" title="{{ __('Back to list') }}">
-                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-                            </a>
+                            <button
+                                type="button"
+                                class="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-full bg-white/15 px-3 text-xs font-semibold text-white hover:bg-white/25 md:hidden"
+                                x-on:click="mobileListOpen = true"
+                                title="{{ __('Chats') }}"
+                            >
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h10"/></svg>
+                                {{ __('Chats') }}
+                            </button>
                             <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/30 bg-white/20 text-sm font-bold">
                                 {{ strtoupper(mb_substr((string) ($active->display_name ?? $active->external_thread_key), 0, 1)) }}
                             </div>

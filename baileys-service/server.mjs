@@ -19,6 +19,8 @@ const SECRET =
     ? _secretEnv.trim()
     : 'change-me';
 const AUTH_ROOT = path.join(__dirname, 'auth');
+/** Bump when deploy instructions change — curl /health to confirm the running process picked up new code. */
+const SERVICE_REV = 4;
 
 if (!fs.existsSync(AUTH_ROOT)) {
   fs.mkdirSync(AUTH_ROOT, { recursive: true });
@@ -45,6 +47,36 @@ function wipeAuthDir(key) {
   } catch (e) {
     throw e instanceof Error ? e : new Error(String(e));
   }
+}
+
+/** @param {unknown} error Boom or similar from Baileys */
+function getDisconnectStatusCode(error) {
+  if (error == null || typeof error !== 'object') {
+    return undefined;
+  }
+  const o = /** @type {{ output?: { statusCode?: number }; statusCode?: number }} */ (error);
+  const fromOutput = o.output?.statusCode;
+  if (typeof fromOutput === 'number') {
+    return fromOutput;
+  }
+  if (typeof o.statusCode === 'number') {
+    return o.statusCode;
+  }
+  return undefined;
+}
+
+/**
+ * These WhatsApp close codes usually mean on-disk creds are useless; wipe once and reconnect for a new QR.
+ */
+function shouldWipeAuthOnce(code) {
+  if (code === undefined) {
+    return false;
+  }
+  return (
+    code === DisconnectReason.loggedOut ||
+    code === DisconnectReason.badSession ||
+    code === DisconnectReason.multideviceMismatch
+  );
 }
 
 function authMiddleware(req, res, next) {
@@ -200,7 +232,7 @@ async function attachConnection(rawKey) {
     }
 
     if (connection === 'close') {
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const statusCode = getDisconnectStatusCode(lastDisconnect?.error);
       const errMsg = lastDisconnect?.error?.message
         ? String(lastDisconnect.error.message)
         : 'Connection closed';
@@ -208,12 +240,12 @@ async function attachConnection(rawKey) {
       slot.qrDataUrl = null;
       slot.sock = null;
 
-      if (statusCode === DisconnectReason.loggedOut) {
+      if (shouldWipeAuthOnce(statusCode)) {
         clearReconnectTimer(slot);
         slot.reconnectAttempts = 0;
 
-        // Stale or revoked on-disk creds often produce immediate "logged out".
-        // Wipe once per user-initiated start and reconnect so a fresh QR can appear.
+        // Stale or revoked on-disk creds often produce immediate close. Wipe once per
+        // user-initiated start and reconnect so a fresh QR can appear.
         if (!slot.logoutClearedOnce) {
           slot.logoutClearedOnce = true;
           try {
@@ -232,9 +264,15 @@ async function attachConnection(rawKey) {
           return;
         }
 
-        slot.status = 'logged_out';
-        slot.error =
-          'WhatsApp closed this session (logged out). On the phone: WhatsApp → Settings → Linked devices — remove this session if it appears, then click Generate pairing QR again.';
+        if (statusCode === DisconnectReason.loggedOut) {
+          slot.status = 'logged_out';
+          slot.error =
+            'WhatsApp closed this session (logged out). On the phone: WhatsApp → Settings → Linked devices — remove this session if it appears, then click Generate pairing QR again.';
+        } else {
+          slot.status = 'error';
+          slot.error =
+            'WhatsApp rejected the saved session (invalid or mismatched). Click Generate pairing QR again. If it repeats, stop the Baileys process, delete this session folder under baileys-service/auth on the server, then retry.';
+        }
         return;
       }
 
@@ -265,8 +303,9 @@ app.get('/', (req, res) => {
   <h1>Baileys WhatsApp Web service</h1>
   <p>This is the Node helper for Laravel. There is no web UI here.</p>
   <ul>
-    <li><code>GET /health</code> — health check (JSON)</li>
+    <li><code>GET /health</code> — health check (JSON, includes <code>rev</code>)</li>
     <li><code>POST /session/start</code> — start pairing (requires <code>X-Baileys-Secret</code> header)</li>
+    <li><code>POST /session/reset</code> — body <code>{"sessionKey":"…"}</code>, clears saved auth for that key</li>
     <li><code>GET /session/:key/status</code> — poll QR / status (requires <code>X-Baileys-Secret</code>)</li>
   </ul>
   <p>Use <strong>/whatsapp/connect</strong> in your Laravel app to generate the QR.</p>
@@ -275,7 +314,28 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true, service: 'baileys' });
+  res.json({ ok: true, service: 'baileys', rev: SERVICE_REV });
+});
+
+/**
+ * Drop socket + delete saved creds for this session key (same auth as other routes).
+ * Use after deploy or corrupted auth if the UI still shows logged_out / error.
+ */
+app.post('/session/reset', authMiddleware, async (req, res) => {
+  const sessionKey = String(req.body.sessionKey || '');
+  if (!sanitizeKey(sessionKey)) {
+    return res.status(400).json({ ok: false, error: 'sessionKey required' });
+  }
+  await destroySession(sessionKey);
+  try {
+    wipeAuthDir(sanitizeKey(sessionKey));
+  } catch (e) {
+    return res.status(500).json({
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+  res.json({ ok: true, sessionKey: sanitizeKey(sessionKey) });
 });
 
 app.post('/session/start', authMiddleware, async (req, res) => {

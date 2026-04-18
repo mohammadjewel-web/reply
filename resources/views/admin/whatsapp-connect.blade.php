@@ -123,7 +123,7 @@
                     </template>
                 </div>
                 <p class="mt-3 text-xs text-slate-500">
-                    {{ __('Requires Node service: run `npm install` and `npm start` in /baileys-service, with BAILEYS_SERVICE_* set in .env.') }}
+                    {{ __('Requires Node 20+: run `npm install` and `npm start` in /baileys-service with BAILEYS_SERVICE_* set. After `git pull`, restart that Node process (old code stays in memory until you do). On the server, `curl http://127.0.0.1:3710/health` should show a `rev` field that matches the latest deploy.') }}
                 </p>
             </div>
         @elseif ($credentialAccount)

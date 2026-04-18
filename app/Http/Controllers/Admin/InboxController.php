@@ -7,6 +7,7 @@ use App\Models\ChannelAccount;
 use App\Models\ChannelMessage;
 use App\Models\Conversation;
 use App\Models\User;
+use App\Services\BaileysRelayService;
 use App\Services\MessengerGraphService;
 use App\Services\WhatsappCloudService;
 use Illuminate\Http\RedirectResponse;
@@ -112,6 +113,7 @@ class InboxController extends Controller
         Conversation $conversation,
         WhatsappCloudService $whatsapp,
         MessengerGraphService $messenger,
+        BaileysRelayService $baileysRelay,
     ): RedirectResponse {
         $validated = $request->validate([
             'body' => ['required', 'string', 'max:4096'],
@@ -128,7 +130,25 @@ class InboxController extends Controller
         }
 
         if ($conversation->platform === Conversation::PLATFORM_WHATSAPP) {
-            $result = $whatsapp->sendTextMessageForChannel($account, $conversation->external_thread_key, $body);
+            $token = $whatsapp->accessTokenForChannel($account);
+            $phoneId = $whatsapp->phoneNumberIdForChannel($account);
+            $cloudReady = $token && $phoneId;
+            $sessionUserId = $account->baileys_session_user_id ?? $user->id;
+            $useBaileys = config('services.baileys.enabled')
+                && (! $cloudReady || $account->baileys_session_user_id !== null);
+
+            if ($useBaileys) {
+                $sessionKey = 'wa-'.$account->id.'-u-'.$sessionUserId;
+                $result = $baileysRelay->sendTextMessage(
+                    $account,
+                    $sessionKey,
+                    $conversation->external_thread_key,
+                    $body,
+                );
+            } else {
+                $result = $whatsapp->sendTextMessageForChannel($account, $conversation->external_thread_key, $body);
+            }
+
             if (! $result['ok']) {
                 return back()->withErrors(['body' => $result['error'] ?? 'WhatsApp send failed'])->withInput();
             }
@@ -137,7 +157,7 @@ class InboxController extends Controller
                 'direction' => ChannelMessage::DIRECTION_OUTBOUND,
                 'external_message_id' => $result['message_id'],
                 'body' => $body,
-                'payload' => null,
+                'payload' => $useBaileys ? ['via' => 'baileys'] : null,
                 'sent_at' => $sentAt,
                 'user_id' => $user->id,
             ]);

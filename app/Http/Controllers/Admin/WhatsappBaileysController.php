@@ -144,6 +144,14 @@ class WhatsappBaileysController extends Controller
             ], 502);
         }
 
-        return response()->json($response->json());
+        $payload = $response->json();
+        if (($payload['status'] ?? '') === 'connected') {
+            $uid = $request->user()->id;
+            if ($account->baileys_session_user_id !== $uid) {
+                $account->forceFill(['baileys_session_user_id' => $uid])->save();
+            }
+        }
+
+        return response()->json($payload);
     }
 }

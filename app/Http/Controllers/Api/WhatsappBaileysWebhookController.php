@@ -40,11 +40,12 @@ class WhatsappBaileysWebhookController extends Controller
             'payload' => ['nullable', 'array'],
         ]);
 
-        if (! preg_match('/^wa-(\d+)-u-\d+$/', $data['session_key'], $m)) {
+        if (! preg_match('/^wa-(\d+)-u-(\d+)$/', $data['session_key'], $m)) {
             return response('Bad session key', 400);
         }
 
         $accountId = (int) $m[1];
+        $sessionUserId = (int) $m[2];
         $account = ChannelAccount::query()
             ->where('type', ChannelAccount::TYPE_WHATSAPP)
             ->whereKey($accountId)
@@ -53,6 +54,10 @@ class WhatsappBaileysWebhookController extends Controller
 
         if (! $account) {
             return response('OK', 200);
+        }
+
+        if ($account->baileys_session_user_id !== $sessionUserId) {
+            $account->forceFill(['baileys_session_user_id' => $sessionUserId])->save();
         }
 
         $threadKey = $this->normalizeJidToThreadKey($data['from']);

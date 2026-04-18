@@ -22,7 +22,7 @@ const SECRET =
     : 'change-me';
 const AUTH_ROOT = path.join(__dirname, 'auth');
 /** Bump when deploy instructions change — curl /health to confirm the running process picked up new code. */
-const SERVICE_REV = 5;
+const SERVICE_REV = 6;
 
 if (!fs.existsSync(AUTH_ROOT)) {
   fs.mkdirSync(AUTH_ROOT, { recursive: true });
@@ -404,6 +404,7 @@ app.get('/', (req, res) => {
     <li><code>GET /health</code> — health check (JSON, includes <code>rev</code>)</li>
     <li><code>POST /session/start</code> — start pairing (requires <code>X-Baileys-Secret</code> header)</li>
     <li><code>POST /session/reset</code> — body <code>{"sessionKey":"…"}</code>, clears saved auth for that key</li>
+    <li><code>POST /session/send</code> — body <code>{"sessionKey","to","text"}</code> (<code>to</code> = phone digits)</li>
     <li><code>GET /session/:key/status</code> — poll QR / status (requires <code>X-Baileys-Secret</code>)</li>
   </ul>
   <p>Use <strong>/whatsapp/connect</strong> in your Laravel app to generate the QR.</p>
@@ -434,6 +435,38 @@ app.post('/session/reset', authMiddleware, async (req, res) => {
     });
   }
   res.json({ ok: true, sessionKey: sanitizeKey(sessionKey) });
+});
+
+app.post('/session/send', authMiddleware, async (req, res) => {
+  const sessionKey = String(req.body.sessionKey || '');
+  const toRaw = String(req.body.to || '');
+  const text = String(req.body.text ?? '');
+  const to = toRaw.replace(/\D/g, '');
+  if (!sanitizeKey(sessionKey) || to.length < 8 || text.length === 0) {
+    return res.status(400).json({
+      ok: false,
+      error: 'sessionKey, to (phone digits), and text required',
+    });
+  }
+  if (text.length > 4096) {
+    return res.status(400).json({ ok: false, error: 'text too long' });
+  }
+  const k = sanitizeKey(sessionKey);
+  const slot = sessions.get(k);
+  if (!slot?.sock || slot.status !== 'connected') {
+    return res.status(409).json({ ok: false, error: 'Session not connected' });
+  }
+  const jid = `${to}@s.whatsapp.net`;
+  try {
+    const sent = await slot.sock.sendMessage(jid, { text });
+    const messageId = sent?.key?.id ?? null;
+    return res.json({ ok: true, messageId });
+  } catch (e) {
+    return res.status(500).json({
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
 });
 
 app.post('/session/start', authMiddleware, async (req, res) => {

@@ -20,6 +20,7 @@ class ChannelAccount extends Model
         'access_token',
         'waba_id',
         'sort_order',
+        'baileys_session_user_id',
     ];
 
     protected function casts(): array
@@ -28,6 +29,7 @@ class ChannelAccount extends Model
             'is_active' => 'boolean',
             'access_token' => 'encrypted',
             'sort_order' => 'integer',
+            'baileys_session_user_id' => 'integer',
         ];
     }
 

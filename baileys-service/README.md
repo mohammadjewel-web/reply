@@ -40,3 +40,5 @@ Pairing only starts a WhatsApp Web session; **Laravel does not see messages unti
 - `BAILEYS_LARAVEL_WEBHOOK_URL` — full URL to the Laravel route **`POST /webhooks/whatsapp-baileys`** (e.g. `https://your-domain.com/webhooks/whatsapp-baileys`).
 
 Use the same `BAILEYS_SERVICE_SECRET` as Laravel for the `X-Baileys-Secret` header. Only **direct chats** (`@s.whatsapp.net`) are forwarded; groups are ignored for now.
+
+**Outbound:** Laravel calls `POST /session/send` with `sessionKey`, `to` (digits only), and `text` while that session status is `connected`.

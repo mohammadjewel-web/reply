@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\AppSetting;
 use App\Models\ChannelAccount;
+use App\Models\Conversation;
+use App\Models\WhatsappLinkSession;
 use App\Services\MessengerGraphService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class ChannelAccountController extends Controller
@@ -167,6 +170,33 @@ class ChannelAccountController extends Controller
         return back()->with('status', $channelAccount->is_active
             ? __('Connection enabled.')
             : __('Connection disabled.'));
+    }
+
+    public function destroy(ChannelAccount $channelAccount): RedirectResponse
+    {
+        $name = $channelAccount->name;
+        $typeLabel = $channelAccount->type === ChannelAccount::TYPE_WHATSAPP
+            ? __('WhatsApp')
+            : __('Messenger');
+
+        DB::transaction(function () use ($channelAccount) {
+            WhatsappLinkSession::query()
+                ->where('channel_account_id', $channelAccount->id)
+                ->delete();
+
+            Conversation::query()
+                ->where('channel_account_id', $channelAccount->id)
+                ->delete();
+
+            $channelAccount->delete();
+        });
+
+        return redirect()
+            ->route('connections.index')
+            ->with('status', __('The :type connection “:name” and its inbox threads were removed.', [
+                'type' => $typeLabel,
+                'name' => $name,
+            ]));
     }
 
     public function updateMetaConfig(Request $request): RedirectResponse

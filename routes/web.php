@@ -86,6 +86,7 @@ Route::middleware(['auth', 'verified', 'active', 'perm:connections.manage'])->gr
     Route::post('/connections/messenger', [ChannelAccountController::class, 'storeMessenger'])->name('connections.store.messenger');
     Route::patch('/connections/meta', [ChannelAccountController::class, 'updateMetaConfig'])->name('connections.meta');
     Route::patch('/connections/{channelAccount}', [ChannelAccountController::class, 'update'])->name('connections.update');
+    Route::delete('/connections/{channelAccount}', [ChannelAccountController::class, 'destroy'])->name('connections.destroy');
     Route::patch('/connections/{channelAccount}/toggle', [ChannelAccountController::class, 'toggleActive'])->name('connections.toggle');
 });
 

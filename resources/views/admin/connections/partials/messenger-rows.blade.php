@@ -27,6 +27,18 @@
                         {{ $acc->is_active ? __('Disable') : __('Enable') }}
                     </button>
                 </form>
+                <form
+                    method="post"
+                    action="{{ route('connections.destroy', $acc) }}"
+                    class="inline"
+                    onsubmit="return confirm(@json(__('Remove “:name” and all inbox threads for this page? This cannot be undone.', ['name' => $acc->name])));"
+                >
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50">
+                        {{ __('Remove') }}
+                    </button>
+                </form>
             </div>
         </td>
     </tr>

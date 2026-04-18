@@ -175,9 +175,9 @@ class BaileysRelayService
                     'ok' => false,
                     'message_id' => null,
                     'error' => __(
-                        'WhatsApp media send failed: the Baileys Node process does not handle POST /session/send-media (usually an old deploy). On the server: pull latest code, cd baileys-service, run npm install, restart Node (pm2/systemd/nohup). Check curl -s :url/health — expect rev 12+ and routes.sendMedia true. Laravel is posting to :endpoint.',
+                        'WhatsApp media send failed: the Baileys Node process does not handle POST /session/send-media (usually an old deploy). On the server: pull latest code, cd baileys-service, run npm install, restart Node (pm2/systemd/nohup). Check curl -s :health_url — expect rev 12+ and routes.sendMedia true. Laravel is posting to :endpoint.',
                         [
-                            'url' => $base.'/health',
+                            'health_url' => $base.'/health',
                             'endpoint' => $base.'/session/send-media',
                         ]
                     ),

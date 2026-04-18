@@ -4,12 +4,14 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\AppSetting;
+use App\Models\ChannelAccount;
 use App\Models\ChannelMessage;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
@@ -197,15 +199,67 @@ class EmployeeController extends Controller
         ]);
     }
 
-    public function profile(User $user): Response
+    public function profile(Request $request, User $user): Response
     {
         $user->loadMissing('roles');
 
-        $messagesQuery = ChannelMessage::query()
+        $request->merge([
+            'platform' => $request->input('platform') ?: null,
+            'account' => $request->input('account') ?: null,
+            'from' => $request->input('from') ?: null,
+            'to' => $request->input('to') ?: null,
+        ]);
+
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:200'],
+            'platform' => ['nullable', 'string', Rule::in(['whatsapp', 'messenger'])],
+            'account' => ['nullable', 'integer', 'exists:channel_accounts,id'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+        ]);
+
+        $q = trim((string) ($validated['q'] ?? ''));
+        $platform = $validated['platform'] ?? null;
+        $accountId = isset($validated['account']) ? (int) $validated['account'] : null;
+        $from = $validated['from'] ?? null;
+        $to = $validated['to'] ?? null;
+
+        $hasActiveFilters = $q !== ''
+            || $platform !== null
+            || $accountId !== null
+            || $from !== null
+            || $to !== null;
+
+        $baseQuery = ChannelMessage::query()
             ->where('user_id', $user->id)
             ->where('direction', ChannelMessage::DIRECTION_OUTBOUND);
 
-        $totalMessagesSent = (clone $messagesQuery)->count();
+        $lifetimeTotal = (clone $baseQuery)->count();
+
+        $messagesQuery = clone $baseQuery;
+
+        if ($q !== '') {
+            $escaped = '%'.addcslashes($q, '%_\\').'%';
+            $messagesQuery->where('body', 'like', $escaped);
+        }
+
+        if ($platform !== null) {
+            $messagesQuery->whereHas('conversation', fn ($qry) => $qry->where('platform', $platform));
+        }
+
+        if ($accountId !== null) {
+            $messagesQuery->whereHas('conversation', fn ($qry) => $qry->where('channel_account_id', $accountId));
+        }
+
+        if ($from !== null) {
+            $messagesQuery->where('sent_at', '>=', Carbon::parse($from)->startOfDay());
+        }
+
+        if ($to !== null) {
+            $messagesQuery->where('sent_at', '<=', Carbon::parse($to)->endOfDay());
+        }
+
+        $filteredTotal = (clone $messagesQuery)->count();
 
         $messages = (clone $messagesQuery)
             ->with(['conversation.channelAccount:id,name,type,is_active'])
@@ -214,11 +268,26 @@ class EmployeeController extends Controller
             ->paginate(40)
             ->withQueryString();
 
+        $channelAccounts = ChannelAccount::query()
+            ->orderBy('type')
+            ->orderBy('name')
+            ->get(['id', 'name', 'type']);
+
         return response()
             ->view('admin.employees.profile', [
                 'employee' => $user,
-                'totalMessagesSent' => $totalMessagesSent,
+                'totalMessagesSent' => $filteredTotal,
+                'lifetimeTotal' => $lifetimeTotal,
+                'hasActiveFilters' => $hasActiveFilters,
+                'filterValues' => [
+                    'q' => $q,
+                    'platform' => $platform ?? '',
+                    'account' => $accountId !== null ? (string) $accountId : '',
+                    'from' => $from ?? '',
+                    'to' => $to ?? '',
+                ],
                 'messages' => $messages,
+                'channelAccounts' => $channelAccounts,
             ])
             ->header('Cache-Control', 'private, no-store, no-cache, must-revalidate')
             ->header('Pragma', 'no-cache');

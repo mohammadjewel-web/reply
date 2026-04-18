@@ -1,7 +1,11 @@
 @php
     /** @var \App\Models\User $employee */
     /** @var int $totalMessagesSent */
+    /** @var int $lifetimeTotal */
+    /** @var bool $hasActiveFilters */
+    /** @var array{q: string, platform: string, account: string, from: string, to: string} $filterValues */
     /** @var \Illuminate\Contracts\Pagination\LengthAwarePaginator $messages */
+    /** @var \Illuminate\Support\Collection<int, \App\Models\ChannelAccount> $channelAccounts */
     $canOpenInbox = auth()->user()?->allows('inbox.access') ?? false;
 @endphp
 <x-app-layout>
@@ -10,12 +14,18 @@
     </x-slot>
 
     <div class="app-page app-page--narrow space-y-6">
+        @if ($errors->any())
+            <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+                {{ $errors->first() }}
+            </div>
+        @endif
+
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p class="text-sm text-[color:var(--app-text-muted)]">
                 <a href="{{ route('employees.index') }}" class="font-semibold text-[color:var(--app-primary)] hover:underline">{{ __('← Back to employees') }}</a>
             </p>
             <a
-                href="{{ route('employees.profile', $employee) }}"
+                href="{{ request()->fullUrl() }}"
                 class="inline-flex items-center justify-center gap-2 rounded-lg border border-[color:var(--app-card-border)] bg-[color:var(--app-card-bg)] px-3 py-2 text-xs font-semibold text-[color:var(--app-text)] shadow-sm transition hover:bg-[color:var(--app-shell-bg)]"
             >
                 {{ __('Refresh') }}
@@ -42,7 +52,11 @@
                 <div class="rounded-xl border border-[color:var(--app-card-border)] bg-[color:var(--app-shell-bg)]/80 px-4 py-3 text-center sm:text-end">
                     <p class="text-xs font-semibold uppercase tracking-wide text-[color:var(--app-text-muted)]">{{ __('Messages sent') }}</p>
                     <p class="mt-1 text-2xl font-bold tabular-nums text-[color:var(--app-text)]">{{ number_format($totalMessagesSent) }}</p>
-                    <p class="mt-1 text-[11px] text-[color:var(--app-text-muted)]">{{ __('Outbound replies from the inbox') }}</p>
+                    @if ($hasActiveFilters)
+                        <p class="mt-1 text-[11px] text-[color:var(--app-text-muted)]">{{ __('Matching filters') }} · {{ __('All time: :n', ['n' => number_format($lifetimeTotal)]) }}</p>
+                    @else
+                        <p class="mt-1 text-[11px] text-[color:var(--app-text-muted)]">{{ __('Outbound replies from the inbox') }}</p>
+                    @endif
                 </div>
             </div>
 
@@ -69,6 +83,75 @@
                 <h3 class="text-sm font-semibold text-[color:var(--app-text)]">{{ __('Sent messages') }}</h3>
                 <p class="mt-1 text-xs text-[color:var(--app-text-muted)]">{{ __('Each row is an outbound message this team member sent. Open the inbox to see the full thread.') }}</p>
             </div>
+            <form method="get" action="{{ route('employees.profile', $employee) }}" class="border-b border-[color:var(--app-card-border)] bg-[color:var(--app-shell-bg)]/40 px-4 py-4 sm:px-6">
+                <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-[color:var(--app-text-muted)]">{{ __('Filter messages') }}</p>
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                    <div class="sm:col-span-2 lg:col-span-1 xl:col-span-2">
+                        <label for="profile-filter-q" class="block text-[11px] font-medium text-[color:var(--app-text-muted)]">{{ __('Search message') }}</label>
+                        <input
+                            id="profile-filter-q"
+                            type="search"
+                            name="q"
+                            value="{{ $filterValues['q'] }}"
+                            placeholder="{{ __('Keyword in body') }}"
+                            class="mt-1 block w-full rounded-lg border border-[color:var(--app-card-border)] bg-[color:var(--app-card-bg)] px-3 py-2 text-sm text-[color:var(--app-text)] shadow-inner focus:border-[color:var(--app-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--app-primary)]/20"
+                            autocomplete="off"
+                        />
+                    </div>
+                    <div>
+                        <label for="profile-filter-platform" class="block text-[11px] font-medium text-[color:var(--app-text-muted)]">{{ __('Platform') }}</label>
+                        <select
+                            id="profile-filter-platform"
+                            name="platform"
+                            class="mt-1 block w-full rounded-lg border border-[color:var(--app-card-border)] bg-[color:var(--app-card-bg)] px-3 py-2 text-sm text-[color:var(--app-text)] shadow-inner focus:border-[color:var(--app-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--app-primary)]/20"
+                        >
+                            <option value="">{{ __('All') }}</option>
+                            <option value="whatsapp" @selected($filterValues['platform'] === 'whatsapp')>{{ __('WhatsApp') }}</option>
+                            <option value="messenger" @selected($filterValues['platform'] === 'messenger')>{{ __('Messenger') }}</option>
+                        </select>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label for="profile-filter-account" class="block text-[11px] font-medium text-[color:var(--app-text-muted)]">{{ __('Connection') }}</label>
+                        <select
+                            id="profile-filter-account"
+                            name="account"
+                            class="mt-1 block w-full rounded-lg border border-[color:var(--app-card-border)] bg-[color:var(--app-card-bg)] px-3 py-2 text-sm text-[color:var(--app-text)] shadow-inner focus:border-[color:var(--app-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--app-primary)]/20"
+                        >
+                            <option value="">{{ __('All connections') }}</option>
+                            @foreach ($channelAccounts as $ca)
+                                <option value="{{ $ca->id }}" @selected($filterValues['account'] === (string) $ca->id)>{{ $ca->name }} ({{ $ca->type }})</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label for="profile-filter-from" class="block text-[11px] font-medium text-[color:var(--app-text-muted)]">{{ __('From date') }}</label>
+                        <input
+                            id="profile-filter-from"
+                            type="date"
+                            name="from"
+                            value="{{ $filterValues['from'] }}"
+                            class="mt-1 block w-full rounded-lg border border-[color:var(--app-card-border)] bg-[color:var(--app-card-bg)] px-3 py-2 text-sm text-[color:var(--app-text)] shadow-inner focus:border-[color:var(--app-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--app-primary)]/20"
+                        />
+                    </div>
+                    <div>
+                        <label for="profile-filter-to" class="block text-[11px] font-medium text-[color:var(--app-text-muted)]">{{ __('To date') }}</label>
+                        <input
+                            id="profile-filter-to"
+                            type="date"
+                            name="to"
+                            value="{{ $filterValues['to'] }}"
+                            class="mt-1 block w-full rounded-lg border border-[color:var(--app-card-border)] bg-[color:var(--app-card-bg)] px-3 py-2 text-sm text-[color:var(--app-text)] shadow-inner focus:border-[color:var(--app-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--app-primary)]/20"
+                        />
+                    </div>
+                </div>
+                <div class="mt-4 flex flex-wrap items-center gap-2">
+                    <button type="submit" class="app-btn-primary !py-2 !text-xs">{{ __('Apply filters') }}</button>
+                    <a
+                        href="{{ route('employees.profile', $employee) }}"
+                        class="inline-flex items-center justify-center rounded-lg border border-[color:var(--app-card-border)] bg-[color:var(--app-card-bg)] px-3 py-2 text-xs font-semibold text-[color:var(--app-text)] shadow-sm transition hover:bg-[color:var(--app-shell-bg)]"
+                    >{{ __('Clear filters') }}</a>
+                </div>
+            </form>
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-[color:var(--app-card-border)] text-sm">
                     <thead>
@@ -118,7 +201,9 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="4" class="px-4 py-10 text-center text-sm text-[color:var(--app-text-muted)]">{{ __('No sent messages yet for this employee.') }}</td>
+                                <td colspan="4" class="px-4 py-10 text-center text-sm text-[color:var(--app-text-muted)]">
+                                    {{ $hasActiveFilters ? __('No messages match these filters.') : __('No sent messages yet for this employee.') }}
+                                </td>
                             </tr>
                         @endforelse
                     </tbody>

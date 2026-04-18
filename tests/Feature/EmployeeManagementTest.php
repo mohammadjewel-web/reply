@@ -359,4 +359,56 @@ class EmployeeManagementTest extends TestCase
         $this->assertNotNull($cache);
         $this->assertStringContainsString('no-store', $cache);
     }
+
+    public function test_employee_profile_text_filter_narrows_sent_messages(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $agent = User::factory()->create([
+            'name' => 'Filter Agent',
+            'email' => 'filter-agent@example.com',
+            'email_verified_at' => now(),
+            'is_active' => true,
+        ]);
+        $agent->roles()->detach();
+
+        $account = ChannelAccount::query()->create([
+            'type' => ChannelAccount::TYPE_WHATSAPP,
+            'name' => 'WA Filter',
+            'is_active' => true,
+            'external_id' => 'pn-filter-1',
+            'sort_order' => 0,
+        ]);
+
+        $conversation = Conversation::query()->create([
+            'channel_account_id' => $account->id,
+            'external_thread_key' => '15550008888',
+            'platform' => Conversation::PLATFORM_WHATSAPP,
+            'display_name' => 'Client A',
+            'metadata' => [],
+        ]);
+
+        ChannelMessage::query()->create([
+            'conversation_id' => $conversation->id,
+            'direction' => ChannelMessage::DIRECTION_OUTBOUND,
+            'body' => 'Alpha unique keyword',
+            'user_id' => $agent->id,
+            'sent_at' => now()->subHour(),
+        ]);
+        ChannelMessage::query()->create([
+            'conversation_id' => $conversation->id,
+            'direction' => ChannelMessage::DIRECTION_OUTBOUND,
+            'body' => 'Beta other text',
+            'user_id' => $agent->id,
+            'sent_at' => now(),
+        ]);
+
+        $url = route('employees.profile', $agent).'?q='.rawurlencode('Alpha unique');
+
+        $response = $this->actingAs($admin)->get($url);
+
+        $response->assertOk();
+        $response->assertSee('Alpha unique keyword', false);
+        $response->assertDontSee('Beta other text', false);
+    }
 }

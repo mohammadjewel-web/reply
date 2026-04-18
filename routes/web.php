@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\WhatsappBaileysController;
 use App\Http\Controllers\Admin\WhatsappConnectController;
 use App\Http\Controllers\Admin\WhatsappCredentialController;
 use App\Http\Controllers\Api\MessengerWebhookController;
+use App\Http\Controllers\Api\WhatsappBaileysWebhookController;
 use App\Http\Controllers\Api\WhatsappWebhookController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\NotificationController;
@@ -27,6 +28,7 @@ Route::prefix('webhooks')
     ->group(function () {
         Route::get('/whatsapp', [WhatsappWebhookController::class, 'verify']);
         Route::post('/whatsapp', [WhatsappWebhookController::class, 'handle']);
+        Route::post('/whatsapp-baileys', [WhatsappBaileysWebhookController::class, 'handle']);
         Route::get('/messenger', [MessengerWebhookController::class, 'verify']);
         Route::post('/messenger', [MessengerWebhookController::class, 'handle']);
     });

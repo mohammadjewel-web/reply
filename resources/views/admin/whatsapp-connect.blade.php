@@ -111,7 +111,7 @@
                 </template>
                 <template x-if="lineStatus === 'connected'">
                     <p class="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-                        {{ __('Device linked in Baileys. Session files are stored on the Baileys server; inbox messaging still uses Cloud API unless you integrate Baileys events into this app.') }}
+                        {{ __('Device linked. Inbound chats appear in the inbox when the Baileys service can POST to your app at /webhooks/whatsapp-baileys (set BAILEYS_LARAVEL_WEBHOOK_URL on the Node host to your full APP_URL + that path). Replies from the inbox still use Meta Cloud API for this connection unless you add Baileys send support.') }}
                     </p>
                 </template>
                 <div class="mt-6 flex justify-center rounded-xl bg-white p-6 ring-1 ring-violet-200/80">

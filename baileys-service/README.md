@@ -32,3 +32,11 @@ Set in the main app `.env`:
 - `BAILEYS_SERVICE_SECRET=...` (same value as this service)
 
 Session auth files are stored under `baileys-service/auth/<sessionKey>/`.
+
+## Inbox (inbound messages)
+
+Pairing only starts a WhatsApp Web session; **Laravel does not see messages until you forward them**. Set on **this** service (Node env or `baileys-service/.env`):
+
+- `BAILEYS_LARAVEL_WEBHOOK_URL` — full URL to the Laravel route **`POST /webhooks/whatsapp-baileys`** (e.g. `https://your-domain.com/webhooks/whatsapp-baileys`).
+
+Use the same `BAILEYS_SERVICE_SECRET` as Laravel for the `X-Baileys-Secret` header. Only **direct chats** (`@s.whatsapp.net`) are forwarded; groups are ignored for now.

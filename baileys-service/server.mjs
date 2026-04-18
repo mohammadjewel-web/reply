@@ -1,7 +1,9 @@
 import express from 'express';
 import makeWASocket, {
   DisconnectReason,
+  extractMessageContent,
   fetchLatestBaileysVersion,
+  getContentType,
   useMultiFileAuthState,
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
@@ -20,7 +22,7 @@ const SECRET =
     : 'change-me';
 const AUTH_ROOT = path.join(__dirname, 'auth');
 /** Bump when deploy instructions change — curl /health to confirm the running process picked up new code. */
-const SERVICE_REV = 4;
+const SERVICE_REV = 5;
 
 if (!fs.existsSync(AUTH_ROOT)) {
   fs.mkdirSync(AUTH_ROOT, { recursive: true });
@@ -168,6 +170,86 @@ async function destroySession(key) {
   slot.status = 'idle';
 }
 
+function summarizeInboundText(msg) {
+  const inner = extractMessageContent(msg.message);
+  if (!inner) {
+    return null;
+  }
+  if (inner.conversation) {
+    return inner.conversation;
+  }
+  if (inner.extendedTextMessage?.text) {
+    return inner.extendedTextMessage.text;
+  }
+  if (inner.imageMessage) {
+    return inner.imageMessage.caption?.trim() || '[image]';
+  }
+  if (inner.videoMessage) {
+    return inner.videoMessage.caption?.trim() || '[video]';
+  }
+  if (inner.audioMessage) {
+    return '[audio]';
+  }
+  if (inner.documentMessage) {
+    return inner.documentMessage.caption?.trim() || '[document]';
+  }
+  if (inner.stickerMessage) {
+    return '[sticker]';
+  }
+  if (inner.contactMessage) {
+    return '[contact]';
+  }
+  if (inner.locationMessage) {
+    return '[location]';
+  }
+  const t = getContentType(inner);
+  return t ? `[${t}]` : '[message]';
+}
+
+async function forwardInboundToLaravel(sessionKeyRaw, baileysMsg, notifyType) {
+  const url = String(process.env.BAILEYS_LARAVEL_WEBHOOK_URL ?? '').trim();
+  if (!url) {
+    return;
+  }
+  const body = summarizeInboundText(baileysMsg);
+  if (body === null) {
+    return;
+  }
+  const remote = baileysMsg.key.remoteJid;
+  const ts = baileysMsg.messageTimestamp
+    ? Number(baileysMsg.messageTimestamp)
+    : undefined;
+  const payload = {
+    key: baileysMsg.key,
+    baileys_type: notifyType,
+  };
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Baileys-Secret': SECRET,
+      },
+      body: JSON.stringify({
+        session_key: sessionKeyRaw,
+        from: remote,
+        body,
+        external_message_id: baileysMsg.key.id ?? undefined,
+        message_timestamp: Number.isFinite(ts) ? ts : undefined,
+        payload,
+      }),
+    });
+    if (!res.ok) {
+      // eslint-disable-next-line no-console
+      console.warn('Baileys ingest webhook HTTP', res.status, await res.text().catch(() => ''));
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('Baileys ingest forward failed', e);
+  }
+}
+
 /**
  * Create socket and wire events. Used for initial start and auto-reconnect (same auth folder).
  */
@@ -209,6 +291,22 @@ async function attachConnection(rawKey) {
   slot.sock = sock;
 
   sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') {
+      return;
+    }
+    for (const msg of messages) {
+      if (!msg.message || msg.key.fromMe) {
+        continue;
+      }
+      const remote = msg.key.remoteJid;
+      if (!remote || remote === 'status@broadcast' || remote.endsWith('@g.us')) {
+        continue;
+      }
+      await forwardInboundToLaravel(rawKey, msg, type);
+    }
+  });
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;

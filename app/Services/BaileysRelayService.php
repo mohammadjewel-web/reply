@@ -261,7 +261,7 @@ class BaileysRelayService
             : '?';
 
         $baseMsg = __(
-            'WhatsApp media needs Baileys rev :min_rev+ (POST /session/send-media). This server still reports rev :rev at :health_url — the Node process was not restarted after deploy (`npm install` alone does not reload it). SSH to the app host, stop the old process (e.g. `ps aux | grep server.mjs` then `kill <pid>`, or `pm2 restart <name>`), then `cd baileys-service && npm start`. Confirm with `curl -s :health_url` (rev :min_rev+, routes.sendMedia true) and `php artisan baileys:verify`. Laravel posts media to :endpoint.',
+            'WhatsApp media needs Baileys rev :min_rev+ (POST /session/send-media). This server still reports rev :rev at :health_url — the Node process was not restarted after deploy (`npm install` alone does not reload it). On the app host: run `ps aux | grep server.mjs`, then `kill` plus the numeric PID on the `node server.mjs` line (a real number, not the letters pid). Or use `pm2 restart` with your process name. Then `cd baileys-service && npm start`. Confirm with `curl -s :health_url` (rev :min_rev+, routes.sendMedia true). Run `php artisan baileys:verify` from the Laravel project root (the folder that contains the `artisan` file), not inside baileys-service. Laravel posts media to :endpoint.',
             [
                 'min_rev' => (string) self::BAILEYS_MIN_MEDIA_REV,
                 'rev' => $revLabel,

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\ChannelAccountController;
 use App\Http\Controllers\Admin\EmployeeController;
 use App\Http\Controllers\Admin\InboxController;
+use App\Http\Controllers\Admin\InboxMessageMediaController;
 use App\Http\Controllers\Admin\MessengerConnectController;
 use App\Http\Controllers\Admin\PermissionController;
 use App\Http\Controllers\Admin\RoleController;
@@ -76,6 +77,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
 Route::middleware(['auth', 'verified', 'active', 'perm:inbox.access'])->group(function () {
     Route::get('/inbox', [InboxController::class, 'index'])->name('inbox');
     Route::get('/inbox/poll', [InboxController::class, 'poll'])->name('inbox.poll');
+    Route::get('/inbox/messages/{message}/media', [InboxMessageMediaController::class, 'show'])->name('inbox.message.media');
     Route::post('/inbox/{conversation}/reply', [InboxController::class, 'reply'])->name('inbox.reply');
     Route::patch('/inbox/{conversation}/assign', [InboxController::class, 'assign'])->name('inbox.assign');
 });

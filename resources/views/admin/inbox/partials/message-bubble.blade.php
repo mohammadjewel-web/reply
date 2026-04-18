@@ -32,9 +32,37 @@
     if ($mediaPath && $mediaKind === '' && str_starts_with($mediaMime, 'audio/')) {
         $mediaKind = 'audio';
     }
-    /** Relative URL: avoids broken images when APP_URL scheme/host differs from the browser (HTTPS, www, etc.). */
-    $mediaUrl = $mediaPath
-        ? route('storage.public_file', ['path' => ltrim(str_replace('\\', '/', $mediaPath), '/')], absolute: false)
+
+    $cloudType = $payload['type'] ?? '';
+    $cloudLazy = false;
+    if ($mediaPath === null && is_array($payload) && in_array($cloudType, ['image', 'video', 'audio', 'document', 'sticker'], true)) {
+        $hasGraphId = match ($cloudType) {
+            'image' => filled(data_get($payload, 'image.id')),
+            'video' => filled(data_get($payload, 'video.id')),
+            'audio' => filled(data_get($payload, 'audio.id')),
+            'document' => filled(data_get($payload, 'document.id')),
+            'sticker' => filled(data_get($payload, 'sticker.id')),
+            default => false,
+        };
+        $cloudLazy = $hasGraphId && ! filled(data_get($payload, 'inbound_media.path'));
+    }
+    if ($cloudLazy && $mediaKind === '') {
+        $mediaKind = match ($cloudType) {
+            'sticker' => 'image',
+            'document' => 'file',
+            'audio' => (! empty($payload['audio']['voice'])) ? 'ptt' : 'audio',
+            'image' => 'image',
+            'video' => 'video',
+            default => '',
+        };
+    }
+
+    /**
+     * Use authenticated inbox media URL so images work behind proxies and WhatsApp Cloud rows can
+     * lazy-fetch Graph media on first view when the webhook did not persist a file.
+     */
+    $mediaUrl = ($mediaPath !== null || $cloudLazy)
+        ? route('inbox.message.media', ['message' => $m->id], absolute: false)
         : null;
 @endphp
 <div class="flex w-full {{ $isOutbound ? 'justify-end' : 'justify-start' }}" data-message-id="{{ $m->id }}">

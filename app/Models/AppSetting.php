@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class AppSetting extends Model
@@ -149,8 +150,9 @@ class AppSetting extends Model
     /**
      * Public URL for a file on the public disk.
      *
-     * Uses a root-relative path (/storage/...) so the browser always requests the
-     * same host you are viewing (avoids APP_URL e.g. http://localhost vs http://127.0.0.1).
+     * Uses Storage URL generation so paths respect APP_URL (including subdirectory
+     * installs). Root-relative "/storage/..." breaks when the app is not served from
+     * the domain root. Ensure `php artisan storage:link` exists on the server.
      */
     public function publicFileUrl(?string $relativePath): ?string
     {
@@ -164,7 +166,7 @@ class AppSetting extends Model
             return null;
         }
 
-        return '/storage/'.$path;
+        return Storage::disk('public')->url($path);
     }
 
     public function logoPublicUrl(): ?string

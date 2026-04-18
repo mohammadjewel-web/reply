@@ -21,6 +21,7 @@ document.addEventListener('alpine:init', () => {
         emojiOpen: false,
         recording: false,
         pendingVoiceBlob: null,
+        hasPendingFile: false,
         chatEmojis: CHAT_EMOJIS,
         _mediaRecorder: null,
         _recordStream: null,
@@ -45,6 +46,9 @@ document.addEventListener('alpine:init', () => {
         scrollToEnd() {
             inboxScrollToEnd();
         },
+        attachmentEl() {
+            return this.$refs.fileAttachment ?? document.getElementById('inbox-attachment-input');
+        },
         toggleEmoji() {
             this.emojiOpen = !this.emojiOpen;
         },
@@ -61,28 +65,31 @@ document.addEventListener('alpine:init', () => {
             ta.dispatchEvent(new Event('input', { bubbles: true }));
         },
         pickPhoto() {
-            const el = this.$refs.fileAttachment;
+            const el = this.attachmentEl();
             if (!el) {
                 return;
             }
             el.accept = 'image/*';
             el.value = '';
+            this.hasPendingFile = false;
             el.click();
         },
         pickVideo() {
-            const el = this.$refs.fileAttachment;
+            const el = this.attachmentEl();
             if (!el) {
                 return;
             }
             el.accept = 'video/*';
             el.value = '';
+            this.hasPendingFile = false;
             el.click();
         },
         clearAttachment() {
-            const el = this.$refs.fileAttachment;
+            const el = this.attachmentEl();
             if (el) {
                 el.value = '';
             }
+            this.hasPendingFile = false;
             this.pendingVoiceBlob = null;
         },
         stopMicTracks() {
@@ -149,7 +156,7 @@ document.addEventListener('alpine:init', () => {
             event.preventDefault();
             this.replyError = '';
             const ta = form.querySelector('textarea[name="body"]');
-            const fileEl = this.$refs.fileAttachment;
+            const fileEl = this.attachmentEl();
             const hasFile = fileEl?.files?.length > 0;
             const body = (ta?.value ?? '').trim();
             if (!hasFile && body === '' && !this.pendingVoiceBlob) {
@@ -207,6 +214,7 @@ document.addEventListener('alpine:init', () => {
                     ta.style.height = 'auto';
                 }
                 this.pendingVoiceBlob = null;
+                this.hasPendingFile = false;
                 if (fileEl) {
                     fileEl.value = '';
                 }

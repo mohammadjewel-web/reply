@@ -289,9 +289,19 @@
 
                             <div class="z-10 shrink-0 border-t border-slate-200/80 bg-[#f0f0f0] px-3 py-3 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] sm:px-4">
                                 @if ($canReply)
-                                    <form method="post" action="{{ $replyAction }}" enctype="multipart/form-data" class="flex flex-col gap-2" @submit="sendReply($event)">
+                                    <form method="post" action="{{ $replyAction }}" enctype="multipart/form-data" class="flex flex-col gap-2" @submit.prevent="sendReply($event)">
                                         @csrf
-                                        <input type="file" name="attachment" x-ref="fileAttachment" class="hidden" accept="image/*,video/*,audio/*" />
+                                        {{-- `display:none` breaks programmatic .click() on file inputs in many browsers; keep input in the layout with sr-only. --}}
+                                        <input
+                                            id="inbox-attachment-input"
+                                            type="file"
+                                            name="attachment"
+                                            x-ref="fileAttachment"
+                                            class="sr-only"
+                                            tabindex="-1"
+                                            accept="image/*,video/*,audio/*"
+                                            @change="hasPendingFile = $event.target.files.length > 0"
+                                        />
 
                                         <div
                                             x-show="emojiOpen"
@@ -347,7 +357,7 @@
                                                     >
                                                         <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
                                                     </button>
-                                                    <span x-show="pendingVoiceBlob || ($refs.fileAttachment && $refs.fileAttachment.files.length)" x-cloak class="ms-1 text-[11px] text-slate-500">
+                                                    <span x-show="pendingVoiceBlob || hasPendingFile" x-cloak class="ms-1 text-[11px] text-slate-500">
                                                         <button type="button" class="font-medium text-emerald-700 underline" @click="clearAttachment()">{{ __('Clear attachment') }}</button>
                                                     </span>
                                                 </div>

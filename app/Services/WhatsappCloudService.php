@@ -6,6 +6,7 @@ use App\Models\ChannelAccount;
 use App\Models\WhatsappLinkSession;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class WhatsappCloudService
 {
@@ -212,6 +213,118 @@ class WhatsappCloudService
         $id = $response->json('messages.0.id');
 
         return ['ok' => true, 'message_id' => $id ? (string) $id : null, 'error' => null];
+    }
+
+    /**
+     * Download inbound media from WhatsApp Cloud (Graph) and store on the public disk.
+     *
+     * @return array{ok: bool, path?: string, mime?: string, error?: string}
+     */
+    public function downloadInboundMediaForChannel(ChannelAccount $account, string $mediaId): array
+    {
+        $mediaId = trim($mediaId);
+        if ($mediaId === '') {
+            return ['ok' => false, 'error' => 'Empty media id'];
+        }
+
+        $token = $this->accessTokenForChannel($account);
+        if (! $token) {
+            return ['ok' => false, 'error' => 'Missing WhatsApp token for this connection'];
+        }
+
+        $version = config('services.whatsapp.graph_version', 'v21.0');
+        $meta = Http::withToken($token)->timeout(30)->get("https://graph.facebook.com/{$version}/{$mediaId}");
+        if (! $meta->successful()) {
+            Log::warning('WhatsApp inbound media meta failed', ['body' => $meta->body(), 'media_id' => $mediaId]);
+
+            return ['ok' => false, 'error' => $meta->body()];
+        }
+
+        $url = $meta->json('url');
+        $mime = (string) ($meta->json('mime_type') ?: 'application/octet-stream');
+        if (! is_string($url) || $url === '') {
+            return ['ok' => false, 'error' => 'No media URL in Graph response'];
+        }
+
+        $bin = Http::withToken($token)->timeout(120)->get($url);
+        if (! $bin->successful()) {
+            Log::warning('WhatsApp inbound media binary failed', ['body' => $bin->body()]);
+
+            return ['ok' => false, 'error' => $bin->body()];
+        }
+
+        $ext = $this->extensionForInboundMime($mime);
+        $path = 'chat-inbound/whatsapp-cloud/'.$account->id.'/'.uniqid('', true).'.'.$ext;
+        Storage::disk('public')->put($path, $bin->body());
+
+        return ['ok' => true, 'path' => $path, 'mime' => $mime];
+    }
+
+    /**
+     * Add `inbound_media` to a webhook message array when Graph media can be downloaded.
+     *
+     * @param  array<string, mixed>  $msg
+     * @return array<string, mixed>
+     */
+    public function attachInboundMediaIfPresent(ChannelAccount $account, array $msg): array
+    {
+        $type = $msg['type'] ?? '';
+        $mediaId = match ($type) {
+            'image' => $msg['image']['id'] ?? null,
+            'video' => $msg['video']['id'] ?? null,
+            'audio' => $msg['audio']['id'] ?? null,
+            'document' => $msg['document']['id'] ?? null,
+            'sticker' => $msg['sticker']['id'] ?? null,
+            default => null,
+        };
+
+        if (! is_string($mediaId) || $mediaId === '') {
+            return $msg;
+        }
+
+        $dl = $this->downloadInboundMediaForChannel($account, $mediaId);
+        if (! $dl['ok']) {
+            return $msg;
+        }
+
+        $kind = match ($type) {
+            'sticker' => 'image',
+            'document' => 'file',
+            'audio' => (! empty($msg['audio']['voice'])) ? 'ptt' : 'audio',
+            default => $type,
+        };
+
+        $originalName = match ($type) {
+            'document' => isset($msg['document']['filename']) ? (string) $msg['document']['filename'] : null,
+            default => null,
+        };
+
+        $msg['inbound_media'] = [
+            'kind' => $kind,
+            'path' => $dl['path'],
+            'mime' => $dl['mime'] ?? 'application/octet-stream',
+            'original_name' => $originalName,
+            'via' => 'whatsapp_cloud',
+        ];
+
+        return $msg;
+    }
+
+    private function extensionForInboundMime(string $mime): string
+    {
+        $mime = strtolower(trim(explode(';', $mime)[0]));
+
+        return match ($mime) {
+            'image/jpeg', 'image/jpg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            'video/mp4', 'video/quicktime' => 'mp4',
+            'audio/ogg' => 'ogg',
+            'audio/mpeg' => 'mp3',
+            'audio/mp4', 'audio/aac' => 'm4a',
+            'application/pdf' => 'pdf',
+            default => 'bin',
+        };
     }
 
     public function exchangeOAuthCode(string $code, string $redirectUri): array

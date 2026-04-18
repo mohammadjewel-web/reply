@@ -78,7 +78,9 @@ Artisan::command('baileys:verify {--dotenv= : Absolute path to baileys-service/.
                 $rev = $j['rev'] ?? null;
                 $sendMedia = $j['routes']['sendMedia'] ?? null;
                 if (is_numeric($rev) && (int) $rev < 12) {
-                    $this->warn('Health reports rev '.(string) $rev.' — media send needs rev 12+ (POST /session/send-media). Update baileys-service and restart Node.');
+                    $this->warn('Health reports rev '.(string) $rev.' — outbound media send needs rev 12+ (POST /session/send-media). Update baileys-service and restart Node.');
+                } elseif (is_numeric($rev) && (int) $rev < 13) {
+                    $this->warn('Health reports rev '.(string) $rev.' — inbound image/video/audio in the inbox needs Baileys rev 13+ (download + multipart webhook). Pull latest baileys-service and restart Node.');
                 }
                 if ($sendMedia !== true) {
                     $this->warn('Health does not report routes.sendMedia: true — running Node is probably outdated.');

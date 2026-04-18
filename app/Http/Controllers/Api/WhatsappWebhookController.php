@@ -77,6 +77,7 @@ class WhatsappWebhookController extends Controller
                     if (! $from) {
                         continue;
                     }
+                    $msg = $this->whatsapp->attachInboundMediaIfPresent($account, $msg);
                     [$body, $ts] = $this->whatsappMessageBodyAndTime($msg);
                     $this->ingest->ingestInbound(
                         $account,
@@ -96,6 +97,7 @@ class WhatsappWebhookController extends Controller
                     if (! $to) {
                         continue;
                     }
+                    $msg = $this->whatsapp->attachInboundMediaIfPresent($account, $msg);
                     [$body, $ts] = $this->whatsappMessageBodyAndTime($msg);
                     $this->ingest->ingestInbound(
                         $account,
@@ -117,7 +119,7 @@ class WhatsappWebhookController extends Controller
     }
 
     /**
-     * @return array{0: string|null, 1: \Illuminate\Support\Carbon|null}
+     * @return array{0: string|null, 1: Carbon|null}
      */
     private function whatsappMessageBodyAndTime(array $msg): array
     {
@@ -131,6 +133,19 @@ class WhatsappWebhookController extends Controller
             $body = $msg['interactive']['button_reply']['title']
                 ?? $msg['interactive']['list_reply']['title']
                 ?? null;
+        } elseif ($type === 'image') {
+            $body = trim((string) ($msg['image']['caption'] ?? ''));
+            $body = $body !== '' ? $body : '[image]';
+        } elseif ($type === 'video') {
+            $body = trim((string) ($msg['video']['caption'] ?? ''));
+            $body = $body !== '' ? $body : '[video]';
+        } elseif ($type === 'audio') {
+            $body = '[audio]';
+        } elseif ($type === 'document') {
+            $body = trim((string) ($msg['document']['caption'] ?? ''));
+            $body = $body !== '' ? $body : '[document]';
+        } elseif ($type === 'sticker') {
+            $body = '[sticker]';
         } else {
             $body = '['.$type.']';
         }

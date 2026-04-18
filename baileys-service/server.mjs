@@ -2,12 +2,15 @@ import express from 'express';
 import multer from 'multer';
 import makeWASocket, {
   DisconnectReason,
+  downloadMediaMessage,
   extractMessageContent,
   fetchLatestBaileysVersion,
   getContentType,
   useMultiFileAuthState,
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
+
+const silentLogger = pino({ level: 'silent' });
 import QRCode from 'qrcode';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -58,7 +61,7 @@ const SECRET =
     : 'change-me';
 const AUTH_ROOT = path.join(__dirname, 'auth');
 /** Bump when deploy instructions change — curl /health to confirm the running process picked up new code. */
-const SERVICE_REV = 12;
+const SERVICE_REV = 13;
 
 if (!fs.existsSync(AUTH_ROOT)) {
   fs.mkdirSync(AUTH_ROOT, { recursive: true });
@@ -256,7 +259,59 @@ function summarizeInboundText(msg) {
   return t ? `[${t}]` : '[message]';
 }
 
-async function forwardMessageToLaravel(sessionKeyRaw, baileysMsg, notifyType, fromMe) {
+/**
+ * Map Baileys content to inbox `inbound_media.kind` (matches message-bubble.blade.php).
+ * @returns {{ kind: string, mime: string, base: string, filename?: string } | null}
+ */
+function classifyInboundMedia(inner) {
+  if (!inner) {
+    return null;
+  }
+  if (inner.imageMessage) {
+    const mime = inner.imageMessage.mimetype || 'image/jpeg';
+    return { kind: 'image', mime, base: 'image' };
+  }
+  if (inner.videoMessage) {
+    const mime = inner.videoMessage.mimetype || 'video/mp4';
+    return { kind: 'video', mime, base: 'video' };
+  }
+  if (inner.audioMessage) {
+    const mime = inner.audioMessage.mimetype || 'audio/ogg; codecs=opus';
+    const ptt = inner.audioMessage.ptt === true;
+    return { kind: ptt ? 'ptt' : 'audio', mime, base: ptt ? 'voice' : 'audio' };
+  }
+  if (inner.documentMessage) {
+    const mime = inner.documentMessage.mimetype || 'application/octet-stream';
+    const fn = inner.documentMessage.fileName || 'file';
+    return { kind: 'file', mime, base: 'document', filename: fn };
+  }
+  if (inner.stickerMessage) {
+    const mime = inner.stickerMessage.mimetype || 'image/webp';
+    return { kind: 'image', mime, base: 'sticker' };
+  }
+  return null;
+}
+
+function fileSuffixForMedia(meta) {
+  const m = (meta.mime || '').split(';')[0].trim().toLowerCase();
+  if (meta.kind === 'file' && meta.filename && String(meta.filename).includes('.')) {
+    return '';
+  }
+  const map = {
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'video/mp4': '.mp4',
+    'audio/ogg': '.ogg',
+    'audio/mpeg': '.mp3',
+    'audio/mp4': '.m4a',
+    'application/pdf': '.pdf',
+  };
+  return map[m] || '';
+}
+
+async function forwardMessageToLaravel(sock, sessionKeyRaw, baileysMsg, notifyType, fromMe) {
   const url = String(process.env.BAILEYS_LARAVEL_WEBHOOK_URL ?? '').trim();
   if (!url) {
     return;
@@ -279,7 +334,77 @@ async function forwardMessageToLaravel(sessionKeyRaw, baileysMsg, notifyType, fr
     from_me: fromMe,
     push_name: pushName,
   };
+  const inner = extractMessageContent(baileysMsg.message);
+  const mediaMeta = classifyInboundMedia(inner);
+
+  let mediaBuffer = null;
+  if (mediaMeta) {
+    try {
+      mediaBuffer = await downloadMediaMessage(
+        baileysMsg,
+        'buffer',
+        {},
+        {
+          logger: silentLogger,
+          reuploadRequest: sock.updateMediaMessage,
+        },
+      );
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('Baileys downloadMediaMessage failed', e);
+    }
+  }
+
   try {
+    if (mediaBuffer && Buffer.isBuffer(mediaBuffer) && mediaBuffer.length > 0) {
+      const suf = fileSuffixForMedia(mediaMeta);
+      let filename;
+      if (mediaMeta.kind === 'file' && mediaMeta.filename) {
+        filename = String(mediaMeta.filename)
+          .replace(/[^a-zA-Z0-9._-]/g, '_')
+          .slice(0, 160);
+        if (!filename.includes('.')) {
+          filename += suf || '.bin';
+        }
+      } else {
+        filename = `${mediaMeta.base}${suf || (mediaMeta.kind === 'image' ? '.jpg' : mediaMeta.kind === 'video' ? '.mp4' : '.bin')}`;
+      }
+      const fd = new FormData();
+      fd.append('session_key', sessionKeyRaw);
+      fd.append('from', peerJid);
+      fd.append('routing_jid', routingJid || '');
+      fd.append('from_me', fromMe ? '1' : '0');
+      if (pushName) {
+        fd.append('push_name', pushName);
+      }
+      fd.append('body', body);
+      if (baileysMsg.key?.id) {
+        fd.append('external_message_id', String(baileysMsg.key.id));
+      }
+      if (Number.isFinite(ts)) {
+        fd.append('message_timestamp', String(Math.floor(ts)));
+      }
+      fd.append('media_kind', mediaMeta.kind);
+      fd.append('media_mime', mediaMeta.mime || 'application/octet-stream');
+      fd.append('payload_json', JSON.stringify(payload));
+      const mimeForBlob = (mediaMeta.mime || 'application/octet-stream').split(';')[0].trim();
+      fd.append('media', new Blob([mediaBuffer], { type: mimeForBlob }), filename);
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'X-Baileys-Secret': SECRET,
+        },
+        body: fd,
+      });
+      if (!res.ok) {
+        // eslint-disable-next-line no-console
+        console.warn('Baileys ingest multipart HTTP', res.status, await res.text().catch(() => ''));
+      }
+      return;
+    }
+
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -364,7 +489,7 @@ async function attachConnection(rawKey) {
         continue;
       }
       const fromMe = Boolean(msg.key.fromMe);
-      await forwardMessageToLaravel(rawKey, msg, type, fromMe);
+      await forwardMessageToLaravel(sock, rawKey, msg, type, fromMe);
     }
   });
 

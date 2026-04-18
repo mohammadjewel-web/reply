@@ -10,8 +10,10 @@
         $bubbleIn = 'border border-slate-200/80 bg-slate-100 text-slate-900 rounded-tl-sm';
     }
     $om = is_array($m->payload) ? ($m->payload['outbound_media'] ?? null) : null;
-    $mediaPath = is_array($om) && ! empty($om['path']) ? $om['path'] : null;
-    $mediaKind = is_array($om) ? ($om['kind'] ?? '') : '';
+    $im = is_array($m->payload) ? ($m->payload['inbound_media'] ?? null) : null;
+    $media = is_array($om) ? $om : (is_array($im) ? $im : null);
+    $mediaPath = is_array($media) && ! empty($media['path']) ? $media['path'] : null;
+    $mediaKind = is_array($media) ? ($media['kind'] ?? '') : '';
     $mediaUrl = $mediaPath
         ? route('storage.public_file', ['path' => ltrim(str_replace('\\', '/', $mediaPath), '/')], absolute: false)
         : null;

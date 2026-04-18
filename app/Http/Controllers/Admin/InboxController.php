@@ -130,12 +130,13 @@ class InboxController extends Controller
         }
 
         if ($conversation->platform === Conversation::PLATFORM_WHATSAPP) {
-            $token = $whatsapp->accessTokenForChannel($account);
-            $phoneId = $whatsapp->phoneNumberIdForChannel($account);
-            $cloudReady = $token && $phoneId;
+            // Only treat Cloud API as available when *this connection* has token + phone id.
+            // Global WHATSAPP_* .env placeholders must not force Cloud sends (invalid token → "Unauthorized")
+            // when the inbox is actually using Baileys.
+            $perAccountCloud = filled($account->access_token) && filled($account->external_id);
             $sessionUserId = $account->baileys_session_user_id ?? $user->id;
             $useBaileys = config('services.baileys.enabled')
-                && (! $cloudReady || $account->baileys_session_user_id !== null);
+                && ($account->baileys_session_user_id !== null || ! $perAccountCloud);
 
             if ($useBaileys) {
                 $sessionKey = 'wa-'.$account->id.'-u-'.$sessionUserId;

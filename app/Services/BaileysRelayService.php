@@ -27,7 +27,8 @@ class BaileysRelayService
         }
 
         $secret = config('services.baileys.secret');
-        if (! is_string($secret) || $secret === '') {
+        $secret = is_string($secret) ? trim($secret) : '';
+        if ($secret === '') {
             return ['ok' => false, 'message_id' => null, 'error' => 'BAILEYS_SERVICE_SECRET is not set'];
         }
 
@@ -54,6 +55,14 @@ class BaileysRelayService
                 'ok' => false,
                 'message_id' => null,
                 'error' => __('WhatsApp Web session is not connected. Open WhatsApp → Connect, generate the QR again for this connection, then retry.'),
+            ];
+        }
+
+        if ($response->status() === 401) {
+            return [
+                'ok' => false,
+                'message_id' => null,
+                'error' => __('Baileys rejected the send (401): use the same BAILEYS_SERVICE_SECRET in Laravel .env and the Node process, then php artisan config:clear and restart Baileys.'),
             ];
         }
 

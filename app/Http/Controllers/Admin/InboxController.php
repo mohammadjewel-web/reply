@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\BaileysRelayService;
 use App\Services\MessengerGraphService;
 use App\Services\WhatsappCloudService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -77,6 +78,56 @@ class InboxController extends Controller
             'assignableUsers' => $assignableUsers,
             'assigneeFilter' => $assigneeFilter,
             'selectedAccountId' => $request->query('account'),
+        ]);
+    }
+
+    public function poll(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'conversation' => ['required', 'integer'],
+            'after' => ['nullable', 'integer', 'min:0'],
+        ]);
+
+        if (! $request->user()->allows('inbox.access')) {
+            return response()->json(['error' => 'forbidden'], 403);
+        }
+
+        $after = (int) ($validated['after'] ?? 0);
+        $conversation = Conversation::query()
+            ->with(['channelAccount:id,name,type,is_active'])
+            ->find($validated['conversation']);
+
+        if (! $conversation) {
+            return response()->json(['error' => 'not_found'], 404);
+        }
+
+        $messages = $conversation->channelMessages()
+            ->with('user:id,name')
+            ->where('id', '>', $after)
+            ->orderBy('id')
+            ->get();
+
+        $conversation->refresh();
+        $conversation->loadMissing('channelAccount:id,name,type,is_active');
+
+        $html = '';
+        foreach ($messages as $message) {
+            $html .= view('admin.inbox.partials.message-bubble', [
+                'm' => $message,
+                'active' => $conversation,
+            ])->render();
+        }
+
+        $lastId = $messages->isEmpty() ? $after : (int) $messages->last()->id;
+
+        return response()->json([
+            'messages_html' => $html,
+            'last_message_id' => $lastId,
+            'contact' => [
+                'title' => $conversation->inboxContactTitle(),
+                'subtitle' => $conversation->inboxHeaderSubtitlePlain(),
+                'avatar' => $conversation->inboxContactAvatarLetter(),
+            ],
         ]);
     }
 

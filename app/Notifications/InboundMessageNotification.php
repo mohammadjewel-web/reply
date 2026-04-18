@@ -36,7 +36,7 @@ class InboundMessageNotification extends Notification
             'category' => 'inbound_message',
             'title' => __('New message'),
             'body' => $preview !== '' ? $preview : __('(no text)'),
-            'sender' => $this->conversation->display_name ?? __('Unknown'),
+            'sender' => $this->conversation->inboxContactTitle(),
             'platform' => $this->conversation->platform,
             'conversation_id' => $this->conversation->id,
             'message_id' => $this->message->id,

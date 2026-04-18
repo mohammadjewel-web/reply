@@ -77,10 +77,15 @@ class MessengerWebhookController extends Controller
                             ? Carbon::createFromTimestampMs($rawTs)
                             : Carbon::createFromTimestamp($rawTs);
                     }
+                    $senderLabel = null;
+                    $pageToken = $this->messenger->pageAccessTokenForChannel($account);
+                    if ($pageToken) {
+                        $senderLabel = $this->messenger->fetchMessengerSenderName((string) $senderId, $pageToken);
+                    }
                     $this->ingest->ingestInbound(
                         $account,
-                        $senderId,
-                        null,
+                        (string) $senderId,
+                        $senderLabel,
                         $text,
                         $mid,
                         $event,

@@ -106,6 +106,39 @@ class MessengerGraphService
     /**
      * @return array{ok: bool, message_id: ?string, error: ?string}
      */
+    /**
+     * Resolve the Facebook / Messenger display name for a PSID (best-effort; requires page token).
+     */
+    public function fetchMessengerSenderName(string $psid, string $pageAccessToken): ?string
+    {
+        if ($psid === '' || $pageAccessToken === '') {
+            return null;
+        }
+
+        $version = config('services.messenger.graph_version', 'v21.0');
+        $response = Http::timeout(4)->get("https://graph.facebook.com/{$version}/{$psid}", [
+            'fields' => 'name,first_name,last_name',
+            'access_token' => $pageAccessToken,
+        ]);
+
+        if (! $response->successful()) {
+            Log::debug('Messenger profile lookup failed', ['psid' => $psid, 'body' => $response->body()]);
+
+            return null;
+        }
+
+        $name = $response->json('name');
+        if (is_string($name) && trim($name) !== '') {
+            return trim($name);
+        }
+
+        $first = $response->json('first_name');
+        $last = $response->json('last_name');
+        $combined = trim(implode(' ', array_filter([(is_string($first) ? $first : ''), (is_string($last) ? $last : '')])));
+
+        return $combined !== '' ? $combined : null;
+    }
+
     private function postMessengerMessage(string $token, string $recipientPsid, string $text): array
     {
         $version = config('services.messenger.graph_version', 'v21.0');

@@ -37,6 +37,7 @@ class WhatsappBaileysWebhookController extends Controller
             'from' => ['required', 'string', 'max:128'],
             'routing_jid' => ['nullable', 'string', 'max:128'],
             'from_me' => ['sometimes', 'boolean'],
+            'push_name' => ['nullable', 'string', 'max:512'],
             'body' => ['nullable', 'string', 'max:65535'],
             'external_message_id' => ['nullable', 'string', 'max:128'],
             'message_timestamp' => ['nullable', 'integer'],
@@ -78,10 +79,13 @@ class WhatsappBaileysWebhookController extends Controller
         $fromMe = (bool) ($data['from_me'] ?? false);
         $direction = $fromMe ? ChannelMessage::DIRECTION_OUTBOUND : ChannelMessage::DIRECTION_INBOUND;
 
+        $pushName = trim((string) ($data['push_name'] ?? ''));
+        $displayName = (! $fromMe && $pushName !== '') ? $pushName : null;
+
         $this->ingest->ingestInbound(
             $account,
             $threadKey,
-            null,
+            $displayName,
             $body,
             $data['external_message_id'] ?? null,
             $data['payload'] ?? null,

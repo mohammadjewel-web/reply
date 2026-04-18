@@ -57,7 +57,7 @@ const SECRET =
     : 'change-me';
 const AUTH_ROOT = path.join(__dirname, 'auth');
 /** Bump when deploy instructions change — curl /health to confirm the running process picked up new code. */
-const SERVICE_REV = 9;
+const SERVICE_REV = 10;
 
 if (!fs.existsSync(AUTH_ROOT)) {
   fs.mkdirSync(AUTH_ROOT, { recursive: true });
@@ -264,10 +264,14 @@ async function forwardMessageToLaravel(sessionKeyRaw, baileysMsg, notifyType, fr
   const ts = baileysMsg.messageTimestamp
     ? Number(baileysMsg.messageTimestamp)
     : undefined;
+  const pushRaw = baileysMsg.pushName;
+  const pushName =
+    typeof pushRaw === 'string' && pushRaw.trim() !== '' ? pushRaw.trim() : undefined;
   const payload = {
     key: baileysMsg.key,
     baileys_type: notifyType,
     from_me: fromMe,
+    push_name: pushName,
   };
   try {
     const res = await fetch(url, {
@@ -282,6 +286,7 @@ async function forwardMessageToLaravel(sessionKeyRaw, baileysMsg, notifyType, fr
         from: peerJid,
         routing_jid: routingJid,
         from_me: fromMe,
+        push_name: pushName,
         body,
         external_message_id: baileysMsg.key.id ?? undefined,
         message_timestamp: Number.isFinite(ts) ? ts : undefined,

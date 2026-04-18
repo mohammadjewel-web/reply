@@ -21,7 +21,13 @@
     <div class="app-page--flush">
         <div
             class="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col px-0 sm:px-2"
-            x-data="{ mobileListOpen: {{ $showThreadMobile ? 'false' : 'true' }} }"
+            x-data="inboxPage({
+                mobileListOpen: @json(! $showThreadMobile),
+                lastMessageId: @json((int) ($active ? ($messages->max('id') ?? 0) : 0)),
+                conversationId: @json($active?->id),
+                pollUrl: @json(route('inbox.poll')),
+            })"
+            x-init="init()"
         >
             <div
                 class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border-0 bg-white shadow-md sm:rounded-2xl sm:border sm:border-slate-200/90 md:flex-row md:min-h-[28rem]"
@@ -277,28 +283,12 @@
                                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h10"/></svg>
                                 {{ __('Chats') }}
                             </button>
-                            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/30 bg-white/20 text-sm font-bold">
+                            <div x-ref="inboxHdrAvatar" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/30 bg-white/20 text-sm font-bold">
                                 {{ $active->inboxContactAvatarLetter() }}
                             </div>
                             <div class="min-w-0 flex-1">
-                                <h3 class="truncate text-[15px] font-semibold leading-tight">{{ $active->inboxContactTitle() }}</h3>
-                                <p class="truncate text-xs text-white/85">
-                                    @if ($active->platform === 'whatsapp')
-                                        {{ __('WhatsApp') }}
-                                    @else
-                                        {{ __('Messenger') }}
-                                    @endif
-                                    @if ($active->channelAccount)
-                                        · {{ $active->channelAccount->name }}
-                                    @else
-                                        · {{ __('Connection removed') }}
-                                    @endif
-                                    @if ($active->platform === 'whatsapp' && ($waSub = $active->inboxContactSecondaryLine()))
-                                        · {{ $waSub }}
-                                    @elseif ($active->platform === 'messenger')
-                                        · {{ $active->external_thread_key }}
-                                    @endif
-                                </p>
+                                <h3 x-ref="inboxHdrTitle" class="truncate text-[15px] font-semibold leading-tight">{{ $active->inboxContactTitle() }}</h3>
+                                <p x-ref="inboxHdrSub" class="truncate text-xs text-white/85">{{ $active->inboxHeaderSubtitlePlain() }}</p>
                             </div>
                             <form method="post" action="{{ $assignAction }}" class="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap md:max-w-[min(100%,22rem)]">
                                 @csrf
@@ -324,15 +314,7 @@
 
                         <div
                             class="relative flex min-h-0 flex-1 flex-col"
-                            x-data="{
-                                scrollToEnd() {
-                                    this.$nextTick(() => {
-                                        const el = this.$refs.thread;
-                                        if (el) el.scrollTop = el.scrollHeight;
-                                    });
-                                }
-                            }"
-                            x-init="scrollToEnd()"
+                            x-init="$nextTick(() => scrollToEnd())"
                         >
                             <div
                                 class="pointer-events-none absolute inset-0 opacity-[0.35] [background-image:radial-gradient(circle_at_1px_1px,rgb(148_163_184/0.45)_1px,transparent_0)] [background-size:20px_20px]"
@@ -353,7 +335,7 @@
                                 @endif
 
                                 @if ($messages->isEmpty())
-                                    <div class="flex min-h-[120px] items-center justify-center px-4 text-center">
+                                    <div data-inbox-empty class="flex min-h-[120px] items-center justify-center px-4 text-center">
                                         <p class="max-w-sm rounded-2xl border border-slate-100 bg-white/90 px-4 py-3 text-sm text-slate-600 shadow-sm">
                                             {{ __('No messages in this chat yet.') }}
                                         </p>
@@ -361,44 +343,7 @@
                                 @endif
 
                                 @foreach ($messages as $m)
-                                    @php
-                                        $isOutbound = $m->direction === 'outbound';
-                                        if ($active->platform === 'whatsapp') {
-                                            $bubbleOut = 'bg-[#d9fdd3] text-slate-900 rounded-tr-sm';
-                                            $bubbleIn = 'border border-slate-100/80 bg-white text-slate-900 rounded-tl-sm shadow-sm';
-                                        } else {
-                                            $bubbleOut = 'bg-[#0084ff] text-white rounded-tr-sm';
-                                            $bubbleIn = 'border border-slate-200/80 bg-slate-100 text-slate-900 rounded-tl-sm';
-                                        }
-                                    @endphp
-                                    <div class="flex w-full {{ $isOutbound ? 'justify-end' : 'justify-start' }}">
-                                        <div class="flex max-w-[min(100%,28rem)] {{ $isOutbound ? 'flex-row-reverse' : 'flex-row' }} items-end gap-2">
-                                            @unless ($isOutbound)
-                                                <div class="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white
-                                                    {{ $active->platform === 'whatsapp' ? 'bg-green-600' : 'bg-blue-600' }}">
-                                                    {{ $active->inboxContactAvatarLetter() }}
-                                                </div>
-                                            @endunless
-                                            <div class="group relative">
-                                                <div
-                                                    class="inline-block rounded-2xl px-3.5 py-2 text-[15px] leading-snug {{ $isOutbound ? $bubbleOut : $bubbleIn }}"
-                                                    style="word-break: break-word;"
-                                                >
-                                                    <p class="whitespace-pre-wrap">{{ $m->body }}</p>
-                                                </div>
-                                                <div class="mt-1 flex items-center gap-1.5 px-1 {{ $isOutbound ? 'justify-end' : 'justify-start' }}">
-                                                    <span class="text-[11px] tabular-nums text-slate-500">
-                                                        {{ $m->sent_at?->format('g:i A') }}
-                                                    </span>
-                                                    @if ($isOutbound && $m->user)
-                                                        <span class="text-[11px] text-slate-400">· {{ $m->user->name }}</span>
-                                                    @elseif ($isOutbound && ! $m->user && $active->platform === 'whatsapp')
-                                                        <span class="text-[11px] text-slate-400">· {{ __('Sent from WhatsApp') }}</span>
-                                                    @endif
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    @include('admin.inbox.partials.message-bubble', ['m' => $m, 'active' => $active])
                                 @endforeach
                             </div>
 

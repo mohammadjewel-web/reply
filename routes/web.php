@@ -58,6 +58,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
 
 Route::middleware(['auth', 'verified', 'active', 'perm:inbox.access'])->group(function () {
     Route::get('/inbox', [InboxController::class, 'index'])->name('inbox');
+    Route::get('/inbox/poll', [InboxController::class, 'poll'])->name('inbox.poll');
     Route::post('/inbox/{conversation}/reply', [InboxController::class, 'reply'])->name('inbox.reply');
     Route::patch('/inbox/{conversation}/assign', [InboxController::class, 'assign'])->name('inbox.assign');
 });

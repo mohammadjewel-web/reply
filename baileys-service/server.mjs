@@ -13,7 +13,11 @@ import fs from 'fs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PORT = Number(process.env.BAILEYS_PORT || 3710);
-const SECRET = process.env.BAILEYS_SERVICE_SECRET || 'change-me';
+const _secretEnv = process.env.BAILEYS_SERVICE_SECRET;
+const SECRET =
+  typeof _secretEnv === 'string' && _secretEnv.trim() !== ''
+    ? _secretEnv.trim()
+    : 'change-me';
 const AUTH_ROOT = path.join(__dirname, 'auth');
 
 if (!fs.existsSync(AUTH_ROOT)) {
@@ -34,7 +38,8 @@ function authDir(key) {
 }
 
 function authMiddleware(req, res, next) {
-  if (req.get('X-Baileys-Secret') !== SECRET) {
+  const sent = String(req.get('X-Baileys-Secret') ?? '').trim();
+  if (sent !== SECRET) {
     return res.status(401).json({ ok: false, error: 'Unauthorized' });
   }
   next();

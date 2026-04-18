@@ -70,11 +70,15 @@ class WhatsappBaileysController extends Controller
                 ?? $response->json('message')
                 ?? (strlen($response->body()) < 500 ? $response->body() : null);
 
-            $message = $detail
-                ? (string) $detail
-                : __('Baileys HTTP :status. Check X-Baileys-Secret matches Node BAILEYS_SERVICE_SECRET.', [
-                    'status' => $response->status(),
-                ]);
+            if ($response->status() === 401) {
+                $message = __('Baileys rejected the request (401): BAILEYS_SERVICE_SECRET must match exactly in Laravel .env and in the Node baileys-service environment (no extra spaces or quotes). Run php artisan config:clear after changing .env, then restart the Node process.');
+            } else {
+                $message = $detail
+                    ? (string) $detail
+                    : __('Baileys HTTP :status. Check X-Baileys-Secret matches Node BAILEYS_SERVICE_SECRET.', [
+                        'status' => $response->status(),
+                    ]);
+            }
 
             return response()->json([
                 'ok' => false,
@@ -128,9 +132,15 @@ class WhatsappBaileysController extends Controller
         }
 
         if (! $response->successful()) {
+            if ($response->status() === 401) {
+                $err = __('Baileys rejected the request (401): BAILEYS_SERVICE_SECRET must match exactly in Laravel .env and in the Node baileys-service environment. Run php artisan config:clear and restart Node.');
+            } else {
+                $err = $response->json('error') ?? __('Baileys status HTTP :status.', ['status' => $response->status()]);
+            }
+
             return response()->json([
                 'ok' => false,
-                'error' => $response->json('error') ?? __('Baileys status HTTP :status.', ['status' => $response->status()]),
+                'error' => $err,
             ], 502);
         }
 

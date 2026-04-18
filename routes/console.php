@@ -1,9 +1,11 @@
 <?php
 
+use App\Models\ChannelMessage;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 Artisan::command('inspire', function () {
@@ -172,3 +174,53 @@ Artisan::command('baileys:verify {--dotenv= : Absolute path to baileys-service/.
         return Command::FAILURE;
     }
 })->purpose('Check Baileys Node /health, secrets, POST /session/ping, and POST /session/send-media (probe)');
+
+Artisan::command('inbox:diagnose-media {messageId : channel_messages.id from data-message-id in HTML}', function (string $messageId) {
+    $id = (int) $messageId;
+    if ($id < 1) {
+        $this->error('Invalid message id.');
+
+        return Command::FAILURE;
+    }
+
+    $m = ChannelMessage::query()->with('conversation.channelAccount')->find($id);
+    if (! $m) {
+        $this->error('No channel_messages row with id '.$id.'.');
+
+        return Command::FAILURE;
+    }
+
+    $p = $m->payload;
+    $this->info('channel_messages.id = '.$m->id);
+    $this->line('conversation_id = '.$m->conversation_id);
+    $this->line('body = '.Str::limit((string) $m->body, 120));
+
+    $im = is_array($p) ? ($p['inbound_media'] ?? null) : null;
+    $om = is_array($p) ? ($p['outbound_media'] ?? null) : null;
+    $inPath = is_array($im) ? (string) ($im['path'] ?? '') : '';
+    $outPath = is_array($om) ? (string) ($om['path'] ?? '') : '';
+    $this->line('inbound_media.path = '.($inPath !== '' ? $inPath : '—'));
+    $this->line('outbound_media.path = '.($outPath !== '' ? $outPath : '—'));
+
+    foreach (['inbound' => $inPath, 'outbound' => $outPath] as $label => $path) {
+        if ($path === '') {
+            continue;
+        }
+        $ok = Storage::disk('public')->exists($path);
+        $this->line("storage/app/public exists ({$label}): ".($ok ? 'YES' : 'NO'));
+    }
+
+    if (is_array($p)) {
+        $this->line('payload.type (WhatsApp Cloud) = '.($p['type'] ?? '—'));
+        $this->line('image.id = '.(data_get($p, 'image.id') ?? '—'));
+        $this->line('payload has Baileys key = '.(isset($p['key']) ? 'yes' : 'no'));
+        $this->line('payload keys (first 20) = '.implode(', ', array_slice(array_keys($p), 0, 20)));
+    } else {
+        $this->warn('payload is not an array (cannot show media metadata).');
+    }
+
+    $this->line('');
+    $this->line('Tip: tail logs while opening the thread: tail -f storage/logs/laravel.log | grep inbox.media');
+
+    return Command::SUCCESS;
+})->purpose('Debug stored paths vs disk and payload shape for one inbox message');

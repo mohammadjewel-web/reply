@@ -8,6 +8,7 @@ use App\Models\ChannelMessage;
 use App\Models\Conversation;
 use App\Services\WhatsappCloudService;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -22,8 +23,15 @@ class InboxMessageMediaController extends Controller
         $message->load(['conversation.channelAccount']);
 
         $path = $this->resolveStoredMediaPath($message);
-        if ($path !== null && Storage::disk('public')->exists($path)) {
-            return Storage::disk('public')->response($path);
+        if ($path !== null) {
+            if (Storage::disk('public')->exists($path)) {
+                return Storage::disk('public')->response($path);
+            }
+            Log::warning('inbox.media.file_missing_on_disk', [
+                'channel_message_id' => $message->id,
+                'expected_path' => $path,
+                'public_disk_root' => storage_path('app/public'),
+            ]);
         }
 
         $conversation = $message->conversation;
@@ -38,6 +46,19 @@ class InboxMessageMediaController extends Controller
                 return Storage::disk('public')->response($path);
             }
         }
+
+        $payload = $message->payload;
+        Log::warning('inbox.media.unavailable_404', [
+            'channel_message_id' => $message->id,
+            'conversation_id' => $message->conversation_id,
+            'body_preview' => str((string) $message->body)->limit(80),
+            'payload_is_array' => is_array($payload),
+            'payload_keys' => is_array($payload) ? array_slice(array_keys($payload), 0, 25) : null,
+            'payload_type' => is_array($payload) ? ($payload['type'] ?? null) : null,
+            'has_inbound_media_path' => is_array($payload) ? filled(data_get($payload, 'inbound_media.path')) : false,
+            'has_image_id' => is_array($payload) ? filled(data_get($payload, 'image.id')) : false,
+            'has_baileys_key' => is_array($payload) ? isset($payload['key']) : false,
+        ]);
 
         abort(404);
     }
@@ -82,6 +103,13 @@ class InboxMessageMediaController extends Controller
         $merged = $whatsapp->attachInboundMediaIfPresent($account, $p);
         $im = $merged['inbound_media'] ?? null;
         if (! is_array($im) || empty($im['path'])) {
+            Log::warning('inbox.media.cloud_hydrate_no_file', [
+                'channel_message_id' => $message->id,
+                'account_id' => $account->id,
+                'graph_media_type' => $type,
+                'graph_media_id' => $mediaId,
+            ]);
+
             return null;
         }
 

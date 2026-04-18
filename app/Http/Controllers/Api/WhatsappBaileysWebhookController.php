@@ -9,6 +9,7 @@ use App\Services\MessageIngestService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class WhatsappBaileysWebhookController extends Controller
 {
@@ -122,6 +123,14 @@ class WhatsappBaileysWebhookController extends Controller
         }
 
         $data['from_me'] = $request->boolean('from_me');
+
+        Log::info('webhooks.baileys.multipart_received', [
+            'account_id' => $account->id,
+            'media_kind' => $data['media_kind'],
+            'stored_path' => $storedPath,
+            'external_message_id' => $data['external_message_id'] ?? null,
+            'bytes' => $file->getSize(),
+        ]);
 
         return $this->ingestBaileysWebhook($data, $payload);
     }

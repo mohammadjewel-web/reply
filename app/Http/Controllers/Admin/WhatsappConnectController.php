@@ -49,6 +49,12 @@ class WhatsappConnectController extends Controller
             'selectedAccount' => $selectedAccount,
             'credentialAccount' => $credentialAccount,
             'appUrlIsPublic' => $this->appUrlIsPublic(),
+            'baileys' => [
+                'enabled' => (bool) config('services.baileys.enabled')
+                    && filled(config('services.baileys.url'))
+                    && filled(config('services.baileys.secret')),
+                'channelAccountId' => $credentialAccount?->id,
+            ],
         ]);
     }
 

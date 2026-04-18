@@ -58,4 +58,14 @@ return [
         'page_access_token' => env('MESSENGER_PAGE_ACCESS_TOKEN'),
     ],
 
+    /*
+    | Baileys (WhatsApp Web protocol) — optional Node service for “Link a device” QR.
+    | Not the same as Meta Cloud API; run `baileys-service` separately.
+    */
+    'baileys' => [
+        'enabled' => (bool) env('BAILEYS_SERVICE_ENABLED', false),
+        'url' => env('BAILEYS_SERVICE_URL'),
+        'secret' => env('BAILEYS_SERVICE_SECRET'),
+    ],
+
 ];

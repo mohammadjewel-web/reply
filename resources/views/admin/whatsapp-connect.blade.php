@@ -46,7 +46,7 @@
         @endif
 
         <div class="app-card">
-            <h3 class="app-card__title">{{ __('Connect WhatsApp') }}</h3>
+            <h3 class="app-card__title">{{ __('Connect WhatsApp (Meta Cloud API)') }}</h3>
             <p class="app-card__lead">
                 @if ($embeddedReady)
                     {{ __('Click the button below to open Meta and link your WhatsApp Business account (Embedded Signup). You can also scan the QR code on your phone—it opens the same link.') }}
@@ -78,13 +78,117 @@
             </p>
 
             <div class="mt-8 border-t border-slate-100 pt-8">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Or scan QR') }}</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ __('Or scan QR (opens Meta link)') }}</p>
                 <div class="mt-4 flex justify-center rounded-xl bg-slate-50 p-6 ring-1 ring-slate-200/80">
                     {!! $qrSvg !!}
                 </div>
                 <p class="mt-3 break-all text-xs text-slate-400">{{ $linkUrl }}</p>
             </div>
         </div>
+
+        @if ($baileys['enabled'] && $baileys['channelAccountId'])
+            <div
+                class="app-card border-violet-200/60 bg-gradient-to-br from-violet-50/80 to-white"
+                x-data="{
+                    accountId: {{ (int) $baileys['channelAccountId'] }},
+                    timer: null,
+                    qrDataUrl: null,
+                    lineStatus: 'idle',
+                    lineError: null,
+                    async startPairing() {
+                        this.lineError = null;
+                        this.qrDataUrl = null;
+                        this.lineStatus = 'starting';
+                        if (this.timer) { clearInterval(this.timer); this.timer = null; }
+                        const res = await fetch(@json(route('whatsapp.baileys.start')), {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                                'X-CSRF-TOKEN': @json(csrf_token()),
+                            },
+                            body: JSON.stringify({ channel_account_id: this.accountId }),
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        if (!data.ok) {
+                            this.lineError = data.error || '{{ __('Could not start Baileys session.') }}';
+                            this.lineStatus = 'error';
+                            return;
+                        }
+                        this.pollOnce();
+                        this.timer = setInterval(() => this.pollOnce(), 2000);
+                    },
+                    async pollOnce() {
+                        try {
+                            const url = @json(route('whatsapp.baileys.status')) + '?channel_account_id=' + encodeURIComponent(this.accountId);
+                            const res = await fetch(url, { headers: { Accept: 'application/json' } });
+                            const data = await res.json().catch(() => ({}));
+                            if (!data.ok && data.error) {
+                                this.lineError = data.error;
+                                this.lineStatus = 'error';
+                                if (this.timer) { clearInterval(this.timer); this.timer = null; }
+                                return;
+                            }
+                            this.lineStatus = data.status || 'unknown';
+                            if (data.qrDataUrl) {
+                                this.qrDataUrl = data.qrDataUrl;
+                            }
+                            if (data.error) {
+                                this.lineError = data.error;
+                            }
+                            if (['connected', 'error', 'logged_out'].includes(this.lineStatus)) {
+                                if (this.timer) { clearInterval(this.timer); this.timer = null; }
+                            }
+                        } catch (e) {
+                            this.lineError = '{{ __('Network error while polling Baileys.') }}';
+                            if (this.timer) { clearInterval(this.timer); this.timer = null; }
+                        }
+                    },
+                }"
+            >
+                <h3 class="app-card__title">{{ __('WhatsApp Web QR (Baileys)') }}</h3>
+                <p class="app-card__lead">
+                    {{ __('Uses the WhatsApp Web protocol. On your phone open WhatsApp → Settings → Linked devices → Link a device, then scan the QR below. This is not Meta Cloud API embedded signup.') }}
+                </p>
+                <div class="mt-4 flex flex-wrap gap-3">
+                    <button
+                        type="button"
+                        class="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700"
+                        x-on:click="startPairing()"
+                    >
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/></svg>
+                        {{ __('Generate pairing QR') }}
+                    </button>
+                    <span class="self-center text-xs text-slate-500" x-text="'{{ __('Status') }}: ' + lineStatus"></span>
+                </div>
+                <template x-if="lineError">
+                    <p class="mt-3 text-sm text-red-700" x-text="lineError"></p>
+                </template>
+                <template x-if="lineStatus === 'connected'">
+                    <p class="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                        {{ __('Device linked in Baileys. Session files are stored on the Baileys server; inbox messaging still uses Cloud API unless you integrate Baileys events into this app.') }}
+                    </p>
+                </template>
+                <div class="mt-6 flex justify-center rounded-xl bg-white p-6 ring-1 ring-violet-200/80">
+                    <template x-if="!qrDataUrl">
+                        <p class="text-center text-sm text-slate-500">{{ __('No QR yet. Click “Generate pairing QR” and keep this page open.') }}</p>
+                    </template>
+                    <template x-if="qrDataUrl">
+                        <img :src="qrDataUrl" alt="{{ __('WhatsApp Web QR') }}" class="h-64 w-64 max-w-full rounded-lg bg-white object-contain" width="280" height="280" />
+                    </template>
+                </div>
+                <p class="mt-3 text-xs text-slate-500">
+                    {{ __('Requires Node service: run `npm install` and `npm start` in /baileys-service, with BAILEYS_SERVICE_* set in .env.') }}
+                </p>
+            </div>
+        @elseif ($credentialAccount)
+            <div class="app-card border-slate-200 bg-slate-50/60">
+                <h3 class="app-card__title">{{ __('WhatsApp Web QR (Baileys)') }}</h3>
+                <p class="app-card__lead text-slate-600">
+                    {{ __('Enable the Baileys service to show a WhatsApp Web–style QR here: set BAILEYS_SERVICE_ENABLED=true, BAILEYS_SERVICE_URL, and BAILEYS_SERVICE_SECRET, then start the Node process in baileys-service.') }}
+                </p>
+            </div>
+        @endif
 
         <div class="app-card">
             <h3 class="app-card__title">{{ __('Webhook (Cloud API)') }}</h3>

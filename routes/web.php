@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\InboxController;
 use App\Http\Controllers\Admin\MessengerConnectController;
 use App\Http\Controllers\Admin\PermissionController;
 use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\WhatsappBaileysController;
 use App\Http\Controllers\Admin\WhatsappConnectController;
 use App\Http\Controllers\Admin\WhatsappCredentialController;
 use App\Http\Controllers\Api\MessengerWebhookController;
@@ -62,6 +63,8 @@ Route::middleware(['auth', 'verified', 'active', 'perm:inbox.access'])->group(fu
 Route::middleware(['auth', 'verified', 'active', 'perm:whatsapp.manage'])->group(function () {
     Route::get('/whatsapp/connect', [WhatsappConnectController::class, 'show'])->name('whatsapp.connect');
     Route::post('/whatsapp/credentials', [WhatsappCredentialController::class, 'update'])->name('whatsapp.credentials');
+    Route::post('/whatsapp/baileys/start', [WhatsappBaileysController::class, 'start'])->name('whatsapp.baileys.start');
+    Route::get('/whatsapp/baileys/status', [WhatsappBaileysController::class, 'status'])->name('whatsapp.baileys.status');
 });
 
 Route::middleware(['auth', 'verified', 'active', 'perm:messenger.manage'])->group(function () {

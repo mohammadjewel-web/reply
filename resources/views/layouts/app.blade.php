@@ -22,30 +22,28 @@
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
     <body class="font-sans antialiased text-[color:var(--app-text)]">
-        <div
-            class="app-layout-shell min-h-screen min-h-[100dvh] flex"
-            x-data="{ sidebarOpen: false }"
-            @keydown.window.escape="sidebarOpen = false"
-        >
+        <div class="app-layout-shell min-h-screen min-h-[100dvh] flex">
+            {{-- Sidebar open state lives in Alpine.store so main content (e.g. inboxPage) is not nested under layout x-data (avoids ReferenceError on replyError, emojiOpen, etc.). --}}
             <div
-                x-show="sidebarOpen"
+                x-data="{}"
+                x-show="$store.layout.sidebarOpen"
                 x-cloak
                 x-transition.opacity
                 class="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-[2px] lg:hidden"
-                @click="sidebarOpen = false"
+                @click="$store.layout.sidebarOpen = false"
             ></div>
 
             @include('layouts.sidebar')
 
             <div class="app-layout-main flex flex-1 flex-col min-w-0 min-h-0">
-                <div class="sticky top-0 z-30">
+                <div class="sticky top-0 z-30" x-data="{}" @keydown.window.escape="$store.layout.sidebarOpen = false">
                 <header class="flex h-14 shrink-0 items-center gap-2 border-b border-[color:var(--app-header-border)] bg-[color:var(--app-header-bg)] px-3 lg:hidden">
                     <button
                         type="button"
                         class="inline-flex items-center justify-center rounded-lg p-2 text-[color:var(--app-text-muted)] transition hover:bg-slate-100 hover:text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-[color:var(--app-primary)]/30"
-                        @click="sidebarOpen = true"
+                        @click="$store.layout.sidebarOpen = true"
                         aria-controls="app-sidebar"
-                        :aria-expanded="sidebarOpen"
+                        :aria-expanded="$store.layout.sidebarOpen"
                     >
                         <span class="sr-only">{{ __('Open menu') }}</span>
                         <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">

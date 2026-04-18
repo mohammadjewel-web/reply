@@ -13,6 +13,10 @@ const CHAT_EMOJIS = [
 ];
 
 document.addEventListener('alpine:init', () => {
+    Alpine.store('layout', {
+        sidebarOpen: false,
+    });
+
     Alpine.data('inboxPage', (config) => ({
         mobileListOpen: config.mobileListOpen,
         listAssignee: config.listAssignee ?? 'all',
@@ -227,9 +231,8 @@ document.addEventListener('alpine:init', () => {
 });
 
 /**
- * Inbox toolbar lives inside nested Alpine scopes (layout shell x-data + inboxPage).
- * Calling methods via @click="pickVideo()" can throw ReferenceError in production;
- * delegate to Alpine.$data on [data-inbox-page] instead.
+ * Inbox composer actions: delegate via [data-inbox-act] so clicks work even if Alpine
+ * scope on the button differs. (Layout sidebar uses $store.layout, not nested x-data.)
  */
 function inboxRootData(el) {
     const root = el?.closest?.('[data-inbox-page]');

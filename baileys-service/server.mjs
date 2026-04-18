@@ -9,13 +9,12 @@ import makeWASocket, {
   useMultiFileAuthState,
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
-
-const silentLogger = pino({ level: 'silent' });
 import QRCode from 'qrcode';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 
+const silentLogger = pino({ level: 'silent' });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**

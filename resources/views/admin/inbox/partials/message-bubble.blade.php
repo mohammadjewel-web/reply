@@ -9,8 +9,9 @@
         $bubbleOut = 'bg-[#0084ff] text-white rounded-tr-sm';
         $bubbleIn = 'border border-slate-200/80 bg-slate-100 text-slate-900 rounded-tl-sm';
     }
-    $om = is_array($m->payload) ? ($m->payload['outbound_media'] ?? null) : null;
-    $im = is_array($m->payload) ? ($m->payload['inbound_media'] ?? null) : null;
+    $payload = is_array($m->payload) ? $m->payload : [];
+    $om = $payload['outbound_media'] ?? null;
+    $im = $payload['inbound_media'] ?? null;
     /** Prefer outbound only when a file path exists; otherwise inbound media is skipped if payload had e.g. outbound_media: [] */
     $media = null;
     if (is_array($om) && filled($om['path'] ?? null)) {
@@ -31,8 +32,9 @@
     if ($mediaPath && $mediaKind === '' && str_starts_with($mediaMime, 'audio/')) {
         $mediaKind = 'audio';
     }
+    /** Relative URL: avoids broken images when APP_URL scheme/host differs from the browser (HTTPS, www, etc.). */
     $mediaUrl = $mediaPath
-        ? route('storage.public_file', ['path' => ltrim(str_replace('\\', '/', $mediaPath), '/')], absolute: true)
+        ? route('storage.public_file', ['path' => ltrim(str_replace('\\', '/', $mediaPath), '/')], absolute: false)
         : null;
 @endphp
 <div class="flex w-full {{ $isOutbound ? 'justify-end' : 'justify-start' }}" data-message-id="{{ $m->id }}">

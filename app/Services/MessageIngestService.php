@@ -56,6 +56,7 @@ class MessageIngestService
             if ($existing) {
                 $this->syncBaileysRemoteJid($existing->conversation, $baileysRemoteJid);
                 $this->syncWhatsappDisplayPhone($existing->conversation, $externalThreadKey, $baileysRemoteJid);
+                $this->upgradeExistingPayloadWithInboundMedia($existing, $payload);
 
                 return $existing;
             }
@@ -128,5 +129,28 @@ class MessageIngestService
         }
         $meta['wa_e164'] = $e164;
         $conversation->update(['metadata' => $meta]);
+    }
+
+    /**
+     * Baileys/WhatsApp may deliver the same external_message_id twice (e.g. notify then append, or JSON
+     * before multipart). The first row can lack inbound_media; merge when the new payload has a file path.
+     */
+    private function upgradeExistingPayloadWithInboundMedia(ChannelMessage $existing, ?array $incoming): void
+    {
+        if ($incoming === null) {
+            return;
+        }
+        $newIm = $incoming['inbound_media'] ?? null;
+        if (! is_array($newIm) || empty($newIm['path'])) {
+            return;
+        }
+        $cur = $existing->payload;
+        $cur = is_array($cur) ? $cur : [];
+        $oldIm = $cur['inbound_media'] ?? null;
+        if (is_array($oldIm) && filled($oldIm['path'] ?? null)) {
+            return;
+        }
+        $cur['inbound_media'] = $newIm;
+        $existing->forceFill(['payload' => $cur])->save();
     }
 }

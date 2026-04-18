@@ -61,6 +61,10 @@ export function initNotifications() {
     const roots = document.querySelectorAll('.js-notification-root');
     if (!roots.length) return;
 
+    const onInboxPage = document.querySelector('[data-inbox-page]');
+    /** Inbox benefits from tighter polling so chat can track the same “fresh” window as the bell. */
+    const pollIntervalMs = onInboxPage ? 2500 : 15000;
+
     const first = roots[0];
     const pollUrl = first.dataset.notificationsUrl;
     const readAllUrl = first.dataset.readAllUrl;
@@ -75,6 +79,7 @@ export function initNotifications() {
         try {
             const res = await fetch(pollUrl, {
                 headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
             });
             if (!res.ok) return;
             const data = await res.json();
@@ -105,6 +110,13 @@ export function initNotifications() {
             }
             prevSnapshot = data;
 
+            document.dispatchEvent(
+                new CustomEvent('app:notifications-refreshed', {
+                    bubbles: true,
+                    detail: data,
+                }),
+            );
+
             const unread = data.unread_count ?? 0;
             updateBadges(roots, unread);
 
@@ -118,7 +130,7 @@ export function initNotifications() {
     }
 
     poll();
-    setInterval(poll, 15000);
+    setInterval(poll, pollIntervalMs);
 
     roots.forEach((root) => {
         const list = root.querySelector('.js-notification-list');

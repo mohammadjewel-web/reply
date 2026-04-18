@@ -16,9 +16,11 @@ document.addEventListener('alpine:init', () => {
         replyError: '',
         pollTimer: null,
         pollInFlight: false,
+        pollLightInFlight: false,
         onVisBound: null,
         onFocusBound: null,
         onOnlineBound: null,
+        onNotificationsRefreshedBound: null,
         listClickBound: null,
         /** Do not name this `init` — Alpine reserves `init` and behavior differs from x-init. */
         inboxStart() {
@@ -42,8 +44,12 @@ document.addEventListener('alpine:init', () => {
             window.addEventListener('focus', this.onFocusBound);
             this.onOnlineBound = () => this.poll();
             window.addEventListener('online', this.onOnlineBound);
+            this.onNotificationsRefreshedBound = () => {
+                this.poll({ syncList: false });
+            };
+            document.addEventListener('app:notifications-refreshed', this.onNotificationsRefreshedBound);
             this.pollTimer = setInterval(() => this.poll(), 2000);
-            setTimeout(() => this.poll(), 300);
+            this.$nextTick(() => this.poll());
         },
         destroy() {
             if (this.listClickBound && this.$el) {
@@ -62,6 +68,10 @@ document.addEventListener('alpine:init', () => {
                 window.removeEventListener('online', this.onOnlineBound);
             }
             this.onOnlineBound = null;
+            if (this.onNotificationsRefreshedBound) {
+                document.removeEventListener('app:notifications-refreshed', this.onNotificationsRefreshedBound);
+            }
+            this.onNotificationsRefreshedBound = null;
             if (this.pollTimer) {
                 clearInterval(this.pollTimer);
             }
@@ -69,14 +79,32 @@ document.addEventListener('alpine:init', () => {
         },
         scrollToEnd() {
             this.$nextTick(() => {
-                const el = this.$refs.thread;
+                const el = this.threadRoot();
                 if (el) {
                     el.scrollTop = el.scrollHeight;
                 }
             });
         },
+        threadRoot() {
+            return this.$refs.thread ?? this.$el.querySelector('[data-inbox-thread]');
+        },
+        threadHasMessageId(thread, mid) {
+            if (!mid || !thread) {
+                return false;
+            }
+            try {
+                if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+                    return !!thread.querySelector(`[data-message-id="${CSS.escape(String(mid))}"]`);
+                }
+            } catch {
+                /* ignore */
+            }
+            const safe = String(mid).replace(/["\\\n\r]/g, '');
+            return !!thread.querySelector(`[data-message-id="${safe}"]`);
+        },
         appendMessagesHtml(html) {
-            if (!html || !this.$refs.thread) {
+            const thread = this.threadRoot();
+            if (!html || !thread) {
                 return;
             }
             const trimmed = String(html).trim();
@@ -85,14 +113,13 @@ document.addEventListener('alpine:init', () => {
             }
             const tpl = document.createElement('template');
             tpl.innerHTML = trimmed;
-            const thread = this.$refs.thread;
             const toAppend = [];
             for (const node of tpl.content.children) {
                 if (node.nodeType !== Node.ELEMENT_NODE) {
                     continue;
                 }
                 const mid = node.getAttribute('data-message-id');
-                if (mid && thread.querySelector(`[data-message-id="${CSS.escape(mid)}"]`)) {
+                if (this.threadHasMessageId(thread, mid)) {
                     continue;
                 }
                 toAppend.push(node);
@@ -143,19 +170,32 @@ document.addEventListener('alpine:init', () => {
                 el.innerHTML = h;
             });
         },
-        async poll() {
-            if (!this.conversationId || !this.pollUrl || document.visibilityState !== 'visible' || this.pollInFlight) {
+        async poll(options = {}) {
+            const syncList = options.syncList !== false;
+            if (!this.conversationId || !this.pollUrl) {
                 return;
             }
-            this.pollInFlight = true;
+            if (syncList && this.pollInFlight) {
+                return;
+            }
+            if (!syncList && this.pollLightInFlight) {
+                return;
+            }
+            if (syncList) {
+                this.pollInFlight = true;
+            } else {
+                this.pollLightInFlight = true;
+            }
             try {
                 const url = new URL(this.pollUrl, window.location.origin);
                 url.searchParams.set('conversation', String(this.conversationId));
                 url.searchParams.set('after', String(this.lastMessageId));
-                url.searchParams.set('sync_list', '1');
-                url.searchParams.set('list_assignee', this.listAssignee || 'all');
-                if (this.listAccount) {
-                    url.searchParams.set('list_account', String(this.listAccount));
+                if (syncList) {
+                    url.searchParams.set('sync_list', '1');
+                    url.searchParams.set('list_assignee', this.listAssignee || 'all');
+                    if (this.listAccount) {
+                        url.searchParams.set('list_account', String(this.listAccount));
+                    }
                 }
                 const res = await fetch(url.toString(), {
                     headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
@@ -164,13 +204,13 @@ document.addEventListener('alpine:init', () => {
                 if (!res.ok) {
                     return;
                 }
-                const raw = await res.text();
+                const raw = (await res.text()).replace(/^\uFEFF/, '');
                 const bodyTrim = raw.trim();
                 const ct = (res.headers.get('content-type') || '').toLowerCase();
                 const looksJson =
                     ct.includes('application/json') ||
                     ct.includes('text/json') ||
-                    (bodyTrim.startsWith('{') && bodyTrim.endsWith('}'));
+                    bodyTrim.startsWith('{');
                 if (!looksJson) {
                     return;
                 }
@@ -185,13 +225,17 @@ document.addEventListener('alpine:init', () => {
                 }
                 this.syncLastMessageIdFromPoll(data);
                 this.applyContactPatch(data.contact);
-                if (data.list_html) {
+                if (syncList && data.list_html) {
                     this.applyListHtml(data.list_html);
                 }
             } catch {
                 /* ignore */
             } finally {
-                this.pollInFlight = false;
+                if (syncList) {
+                    this.pollInFlight = false;
+                } else {
+                    this.pollLightInFlight = false;
+                }
             }
         },
         async sendReply(event) {

@@ -16,9 +16,12 @@
         href="{{ $inboxLink($c) }}"
         class="js-inbox-thread-link group flex items-center gap-3 border-b border-slate-100/90 px-3 py-3 transition-colors hover:bg-slate-50/95 sm:px-4 {{ (int) $selectedConversationId === (int) $c->id ? 'border-s-[3px] border-s-emerald-600 bg-emerald-50/95 ring-1 ring-inset ring-emerald-600/10' : 'border-s-[3px] border-s-transparent' }}"
     >
-        <div class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full text-base font-semibold text-white shadow-md ring-2 ring-white
-            {{ $c->platform === 'whatsapp' ? 'bg-gradient-to-br from-[#25d366] to-[#128c7e]' : 'bg-gradient-to-br from-[#0084ff] to-[#0064d1]' }}">
-            <span class="max-w-full truncate px-0.5 text-center leading-none">{{ $c->inboxContactAvatarLetter() }}</span>
+        <div
+            class="flex h-12 w-12 shrink-0 select-none items-center justify-center rounded-full border-2 border-white text-base font-semibold text-white shadow-md
+                {{ $c->platform === 'whatsapp' ? 'bg-gradient-to-br from-[#25d366] to-[#128c7e]' : 'bg-gradient-to-br from-[#0084ff] to-[#0064d1]' }}"
+            aria-hidden="true"
+        >
+            {{ $c->inboxContactAvatarLetter() }}
         </div>
         <div class="min-w-0 flex-1">
             <div class="flex items-start justify-between gap-2">

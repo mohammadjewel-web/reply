@@ -21,6 +21,7 @@
     <div class="app-page--flush">
         <div
             class="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col px-0 sm:px-2"
+            data-inbox-page
             x-data="inboxPage({
                 mobileListOpen: @json(! $showThreadMobile),
                 lastMessageId: @json((int) ($active ? ($messages->max('id') ?? 0) : 0)),
@@ -258,6 +259,7 @@
 
                             <div
                                 x-ref="thread"
+                                data-inbox-thread
                                 class="relative min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden scroll-smooth px-3 py-4 sm:px-5"
                             >
                                 @if ($active->assigned_to_user_id === null)

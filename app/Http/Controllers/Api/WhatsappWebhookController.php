@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ChannelAccount;
+use App\Models\ChannelMessage;
 use App\Services\MessageIngestService;
 use App\Services\WhatsappCloudService;
 use Illuminate\Http\Request;
@@ -76,20 +77,7 @@ class WhatsappWebhookController extends Controller
                     if (! $from) {
                         continue;
                     }
-                    $type = $msg['type'] ?? 'unknown';
-                    $body = null;
-                    if ($type === 'text') {
-                        $body = $msg['text']['body'] ?? null;
-                    } elseif ($type === 'button') {
-                        $body = $msg['button']['text'] ?? $msg['button']['payload'] ?? null;
-                    } elseif ($type === 'interactive') {
-                        $body = $msg['interactive']['button_reply']['title']
-                            ?? $msg['interactive']['list_reply']['title']
-                            ?? null;
-                    } else {
-                        $body = '['.$type.']';
-                    }
-                    $ts = isset($msg['timestamp']) ? Carbon::createFromTimestamp((int) $msg['timestamp']) : null;
+                    [$body, $ts] = $this->whatsappMessageBodyAndTime($msg);
                     $this->ingest->ingestInbound(
                         $account,
                         $from,
@@ -100,10 +88,55 @@ class WhatsappWebhookController extends Controller
                         $ts,
                     );
                 }
+
+                // Messages sent from the WhatsApp Business app on a phone (field smb_message_echoes).
+                // Subscribe to this webhook field in the Meta app or echoes are never delivered.
+                foreach ($value['message_echoes'] ?? [] as $msg) {
+                    $to = $msg['to'] ?? null;
+                    if (! $to) {
+                        continue;
+                    }
+                    [$body, $ts] = $this->whatsappMessageBodyAndTime($msg);
+                    $this->ingest->ingestInbound(
+                        $account,
+                        $to,
+                        null,
+                        $body,
+                        $msg['id'] ?? null,
+                        $msg,
+                        $ts,
+                        null,
+                        ChannelMessage::DIRECTION_OUTBOUND,
+                        false,
+                    );
+                }
             }
         }
 
         return response('OK', 200);
+    }
+
+    /**
+     * @return array{0: string|null, 1: \Illuminate\Support\Carbon|null}
+     */
+    private function whatsappMessageBodyAndTime(array $msg): array
+    {
+        $type = $msg['type'] ?? 'unknown';
+        $body = null;
+        if ($type === 'text') {
+            $body = $msg['text']['body'] ?? null;
+        } elseif ($type === 'button') {
+            $body = $msg['button']['text'] ?? $msg['button']['payload'] ?? null;
+        } elseif ($type === 'interactive') {
+            $body = $msg['interactive']['button_reply']['title']
+                ?? $msg['interactive']['list_reply']['title']
+                ?? null;
+        } else {
+            $body = '['.$type.']';
+        }
+        $ts = isset($msg['timestamp']) ? Carbon::createFromTimestamp((int) $msg['timestamp']) : null;
+
+        return [$body, $ts];
     }
 
     private function resolveWhatsappAccount(?string $phoneNumberId): ?ChannelAccount

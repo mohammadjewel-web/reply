@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Str;
 
 class Conversation extends Model
 {
@@ -43,6 +45,34 @@ class Conversation extends Model
     public function channelMessages(): HasMany
     {
         return $this->hasMany(ChannelMessage::class)->orderBy('sent_at')->orderBy('id');
+    }
+
+    public function latestMessage(): HasOne
+    {
+        return $this->hasOne(ChannelMessage::class)->latestOfMany();
+    }
+
+    /**
+     * Short preview for the inbox sidebar (last message in thread).
+     */
+    public function inboxListPreview(): string
+    {
+        if (! $this->relationLoaded('latestMessage')) {
+            return '';
+        }
+        $m = $this->latestMessage;
+        if (! $m) {
+            return '';
+        }
+        $raw = trim((string) $m->body);
+        if ($raw === '') {
+            return '';
+        }
+        $prefix = $m->direction === ChannelMessage::DIRECTION_OUTBOUND
+            ? __('You').': '
+            : '';
+
+        return $prefix.Str::limit($raw, 64, '…');
     }
 
     public function resolvedWhatsappPhone(): ?string

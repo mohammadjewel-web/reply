@@ -26,8 +26,10 @@
                 lastMessageId: @json((int) ($active ? ($messages->max('id') ?? 0) : 0)),
                 conversationId: @json($active?->id),
                 pollUrl: @json(route('inbox.poll')),
+                listAssignee: @json(request('assignee', 'all')),
+                listAccount: @json(request('account')),
             })"
-            x-init="init()"
+            x-init="inboxStart()"
         >
             <div
                 class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border-0 bg-white shadow-md sm:rounded-2xl sm:border sm:border-slate-200/90 md:flex-row md:min-h-[28rem]"
@@ -116,46 +118,12 @@
                             </label>
                         </div>
                     </div>
-                    <div class="min-h-0 flex-1 overflow-y-auto">
-                        @forelse ($conversations as $c)
-                            <a href="{{ route('inbox', array_filter(['conversation' => $c->id, 'assignee' => request('assignee'), 'account' => request('account')])) }}"
-                               x-on:click="mobileListOpen = false"
-                               class="flex items-center gap-3 border-b border-slate-50 px-3 py-3 transition-colors hover:bg-slate-50 sm:px-4 {{ $active && $active->id === $c->id ? 'border-s-[3px] border-s-emerald-600 bg-emerald-50/90' : '' }}">
-                                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white shadow-inner
-                                    {{ $c->platform === 'whatsapp' ? 'bg-gradient-to-br from-green-500 to-green-700' : 'bg-gradient-to-br from-blue-500 to-blue-700' }}">
-                                    {{ $c->inboxContactAvatarLetter() }}
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <div class="flex items-center justify-between gap-2">
-                                        <span class="truncate font-medium text-slate-900">{{ $c->inboxContactTitle() }}</span>
-                                        <span class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide
-                                            {{ $c->platform === 'whatsapp' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800' }}">
-                                            {{ $c->platform === 'whatsapp' ? 'WA' : 'FB' }}
-                                        </span>
-                                    </div>
-                                    @if ($c->channelAccount)
-                                        <p class="truncate text-[11px] text-slate-500">{{ $c->channelAccount->name }}</p>
-                                    @else
-                                        <p class="truncate text-[11px] text-slate-500">{{ __('Connection removed — history kept') }}</p>
-                                    @endif
-                                    <div class="mt-0.5 flex flex-wrap items-center gap-1.5">
-                                        @if ($c->assignee)
-                                            <span class="inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-800">
-                                                <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                                {{ $c->assignee->name }}
-                                            </span>
-                                        @else
-                                            <span class="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900">
-                                                {{ __('Unassigned') }}
-                                            </span>
-                                        @endif
-                                        <span class="text-[10px] text-slate-400">{{ $c->last_message_at?->diffForHumans() ?? '—' }}</span>
-                                    </div>
-                                </div>
-                            </a>
-                        @empty
-                            <p class="p-6 text-center text-sm text-slate-500">{{ __('No conversations match these filters.') }}</p>
-                        @endforelse
+                    <div class="js-inbox-conversation-list min-h-0 flex-1 overflow-y-auto">
+                        @include('admin.inbox.partials.inbox-conversation-rows', [
+                            'conversations' => $conversations,
+                            'selectedConversationId' => $active?->id,
+                            'filterRequest' => request(),
+                        ])
                     </div>
                 </aside>
 
@@ -218,45 +186,12 @@
                             </label>
                         </div>
                     </div>
-                    <div class="min-h-0 flex-1 overflow-y-auto">
-                        @forelse ($conversations as $c)
-                            <a href="{{ route('inbox', array_filter(['conversation' => $c->id, 'assignee' => request('assignee'), 'account' => request('account')])) }}"
-                               class="flex items-center gap-3 border-b border-slate-50 px-3 py-3 transition-colors hover:bg-slate-50 sm:px-4 {{ $active && $active->id === $c->id ? 'border-s-[3px] border-s-emerald-600 bg-emerald-50/90' : '' }}">
-                                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white shadow-inner
-                                    {{ $c->platform === 'whatsapp' ? 'bg-gradient-to-br from-green-500 to-green-700' : 'bg-gradient-to-br from-blue-500 to-blue-700' }}">
-                                    {{ $c->inboxContactAvatarLetter() }}
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <div class="flex items-center justify-between gap-2">
-                                        <span class="truncate font-medium text-slate-900">{{ $c->inboxContactTitle() }}</span>
-                                        <span class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide
-                                            {{ $c->platform === 'whatsapp' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800' }}">
-                                            {{ $c->platform === 'whatsapp' ? 'WA' : 'FB' }}
-                                        </span>
-                                    </div>
-                                    @if ($c->channelAccount)
-                                        <p class="truncate text-[11px] text-slate-500">{{ $c->channelAccount->name }}</p>
-                                    @else
-                                        <p class="truncate text-[11px] text-slate-500">{{ __('Connection removed — history kept') }}</p>
-                                    @endif
-                                    <div class="mt-0.5 flex flex-wrap items-center gap-1.5">
-                                        @if ($c->assignee)
-                                            <span class="inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-800">
-                                                <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                                {{ $c->assignee->name }}
-                                            </span>
-                                        @else
-                                            <span class="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900">
-                                                {{ __('Unassigned') }}
-                                            </span>
-                                        @endif
-                                        <span class="text-[10px] text-slate-400">{{ $c->last_message_at?->diffForHumans() ?? '—' }}</span>
-                                    </div>
-                                </div>
-                            </a>
-                        @empty
-                            <p class="p-6 text-center text-sm text-slate-500">{{ __('No conversations match these filters.') }}</p>
-                        @endforelse
+                    <div class="js-inbox-conversation-list min-h-0 flex-1 overflow-y-auto">
+                        @include('admin.inbox.partials.inbox-conversation-rows', [
+                            'conversations' => $conversations,
+                            'selectedConversationId' => $active?->id,
+                            'filterRequest' => request(),
+                        ])
                     </div>
                 </aside>
 
@@ -349,7 +284,7 @@
 
                             <div class="z-10 shrink-0 border-t border-slate-200/80 bg-[#f0f0f0] px-3 py-3 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] sm:px-4">
                                 @if ($canReply)
-                                    <form method="post" action="{{ $replyAction }}" class="flex items-end gap-2">
+                                    <form method="post" action="{{ $replyAction }}" class="flex items-end gap-2" @submit="sendReply($event)">
                                         @csrf
                                         <label for="chat-body" class="sr-only">{{ __('Message') }}</label>
                                         <div class="min-w-0 flex-1 rounded-3xl border border-slate-200 bg-white shadow-inner transition-shadow focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/30">
@@ -380,6 +315,7 @@
                                         {{ __('This chat is not linked to an active connection. You can read the history; add a connection again to send messages.') }}
                                     </div>
                                 @endif
+                                <p x-show="replyError" x-cloak class="mt-2 text-center text-sm text-red-600" x-text="replyError"></p>
                                 <x-input-error :messages="$errors->get('body')" class="mt-2 text-center" />
                                 <x-input-error :messages="$errors->get('assigned_to_user_id')" class="mt-2 text-center" />
                             </div>

@@ -14,7 +14,7 @@ class NotificationController extends Controller
         $user = $request->user();
         $prefs = $user->notificationPreferencesResolved();
 
-        $notifications = $user->notifications()
+        $notifications = $user->unreadNotifications()
             ->orderByDesc('created_at')
             ->limit(25)
             ->get()

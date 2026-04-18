@@ -131,8 +131,9 @@ export function initNotifications() {
             const href = a.getAttribute('href');
             e.preventDefault();
             const readUrl = readTemplate.replace('__ID__', encodeURIComponent(id));
+            const row = a.closest('li');
             try {
-                await fetch(readUrl, {
+                const res = await fetch(readUrl, {
                     method: 'POST',
                     headers: {
                         Accept: 'application/json',
@@ -140,6 +141,10 @@ export function initNotifications() {
                         'X-Requested-With': 'XMLHttpRequest',
                     },
                 });
+                if (res.ok && row) {
+                    row.remove();
+                }
+                await poll();
             } catch {
                 // ignore
             }

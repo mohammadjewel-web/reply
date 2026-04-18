@@ -5,7 +5,7 @@
     data-notifications-url="{{ route('notifications.index') }}"
     data-read-all-url="{{ route('notifications.read_all') }}"
     data-read-template="{{ route('notifications.read', ['id' => '__ID__']) }}"
-    data-empty-text="{{ __('No notifications yet.') }}"
+    data-empty-text="{{ __('No unread notifications.') }}"
     data-csrf="{{ csrf_token() }}"
 >
     <button

@@ -19,25 +19,8 @@ class InboxController extends Controller
 {
     public function index(Request $request): View
     {
-        $query = Conversation::query()
-            ->with(['channelAccount:id,name,type,is_active', 'assignee:id,name'])
-            ->orderByDesc('last_message_at')
-            ->orderByDesc('id');
-
-        if ($request->filled('account')) {
-            $query->where('channel_account_id', (int) $request->query('account'));
-        }
-
+        $conversations = $this->loadInboxConversations($request);
         $assigneeFilter = $request->query('assignee', 'all');
-        if ($assigneeFilter === 'me') {
-            $query->where('assigned_to_user_id', $request->user()->id);
-        } elseif ($assigneeFilter === 'unassigned') {
-            $query->whereNull('assigned_to_user_id');
-        } elseif (is_numeric($assigneeFilter)) {
-            $query->where('assigned_to_user_id', (int) $assigneeFilter);
-        }
-
-        $conversations = $query->limit(250)->get();
 
         $activeId = $request->query('conversation');
         $active = $activeId
@@ -120,7 +103,7 @@ class InboxController extends Controller
 
         $lastId = $messages->isEmpty() ? $after : (int) $messages->last()->id;
 
-        return response()->json([
+        $payload = [
             'messages_html' => $html,
             'last_message_id' => $lastId,
             'contact' => [
@@ -128,7 +111,80 @@ class InboxController extends Controller
                 'subtitle' => $conversation->inboxHeaderSubtitlePlain(),
                 'avatar' => $conversation->inboxContactAvatarLetter(),
             ],
-        ]);
+        ];
+
+        if ($request->boolean('sync_list')) {
+            $listRequest = $this->inboxListFilterRequest($request);
+            $payload['list_html'] = $this->renderInboxConversationListHtml(
+                $listRequest,
+                (int) $validated['conversation'],
+            );
+        }
+
+        return response()->json($payload);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, Conversation>
+     */
+    protected function loadInboxConversations(Request $request)
+    {
+        $query = Conversation::query()
+            ->with([
+                'channelAccount:id,name,type,is_active',
+                'assignee:id,name',
+                'latestMessage',
+            ])
+            ->orderByDesc('last_message_at')
+            ->orderByDesc('id');
+
+        if ($request->filled('account')) {
+            $query->where('channel_account_id', (int) $request->query('account'));
+        }
+
+        $assigneeFilter = $request->query('assignee', 'all');
+        if ($assigneeFilter === 'me') {
+            $query->where('assigned_to_user_id', $request->user()->id);
+        } elseif ($assigneeFilter === 'unassigned') {
+            $query->whereNull('assigned_to_user_id');
+        } elseif (is_numeric($assigneeFilter)) {
+            $query->where('assigned_to_user_id', (int) $assigneeFilter);
+        }
+
+        return $query->limit(250)->get();
+    }
+
+    protected function inboxListFilterRequest(Request $request): Request
+    {
+        $assigneeRaw = $request->get('list_assignee');
+        if ($assigneeRaw === null || $assigneeRaw === '') {
+            $assigneeRaw = $request->get('assignee', 'all');
+        }
+        $accountRaw = $request->get('list_account');
+        if ($accountRaw === null || $accountRaw === '') {
+            $accountRaw = $request->get('account');
+        }
+
+        $query = ['assignee' => is_string($assigneeRaw) && $assigneeRaw !== '' ? $assigneeRaw : 'all'];
+        if ($accountRaw !== null && $accountRaw !== '') {
+            $query['account'] = $accountRaw;
+        }
+
+        $sub = Request::create('/inbox', 'GET', $query);
+        $sub->setUserResolver($request->getUserResolver());
+
+        return $sub;
+    }
+
+    protected function renderInboxConversationListHtml(Request $filterRequest, int $selectedConversationId): string
+    {
+        $conversations = $this->loadInboxConversations($filterRequest);
+
+        return view('admin.inbox.partials.inbox-conversation-rows', [
+            'conversations' => $conversations,
+            'selectedConversationId' => $selectedConversationId,
+            'filterRequest' => $filterRequest,
+        ])->render();
     }
 
     public function assign(Request $request, Conversation $conversation): RedirectResponse
@@ -165,7 +221,7 @@ class InboxController extends Controller
         WhatsappCloudService $whatsapp,
         MessengerGraphService $messenger,
         BaileysRelayService $baileysRelay,
-    ): RedirectResponse {
+    ): RedirectResponse|JsonResponse {
         $validated = $request->validate([
             'body' => ['required', 'string', 'max:4096'],
         ]);
@@ -174,11 +230,19 @@ class InboxController extends Controller
         $user = $request->user();
         $body = $validated['body'];
         $sentAt = now();
+        $wantsJson = $request->ajax() || $request->wantsJson();
 
         $account = $conversation->channelAccount;
         if (! $account || ! $account->is_active) {
-            return back()->withErrors(['body' => __('This conversation is not linked to an active channel account.')])->withInput();
+            $msg = __('This conversation is not linked to an active channel account.');
+            if ($wantsJson) {
+                return response()->json(['message' => $msg, 'errors' => ['body' => [$msg]]], 422);
+            }
+
+            return back()->withErrors(['body' => $msg])->withInput();
         }
+
+        $message = null;
 
         if ($conversation->platform === Conversation::PLATFORM_WHATSAPP) {
             // Only treat Cloud API as available when *this connection* has token + phone id.
@@ -204,9 +268,14 @@ class InboxController extends Controller
             }
 
             if (! $result['ok']) {
-                return back()->withErrors(['body' => $result['error'] ?? 'WhatsApp send failed'])->withInput();
+                $err = $result['error'] ?? 'WhatsApp send failed';
+                if ($wantsJson) {
+                    return response()->json(['message' => $err, 'errors' => ['body' => [$err]]], 422);
+                }
+
+                return back()->withErrors(['body' => $err])->withInput();
             }
-            ChannelMessage::query()->create([
+            $message = ChannelMessage::query()->create([
                 'conversation_id' => $conversation->id,
                 'direction' => ChannelMessage::DIRECTION_OUTBOUND,
                 'external_message_id' => $result['message_id'],
@@ -218,9 +287,14 @@ class InboxController extends Controller
         } elseif ($conversation->platform === Conversation::PLATFORM_MESSENGER) {
             $result = $messenger->sendTextMessageForChannel($account, $conversation->external_thread_key, $body);
             if (! $result['ok']) {
-                return back()->withErrors(['body' => $result['error'] ?? 'Messenger send failed'])->withInput();
+                $err = $result['error'] ?? 'Messenger send failed';
+                if ($wantsJson) {
+                    return response()->json(['message' => $err, 'errors' => ['body' => [$err]]], 422);
+                }
+
+                return back()->withErrors(['body' => $err])->withInput();
             }
-            ChannelMessage::query()->create([
+            $message = ChannelMessage::query()->create([
                 'conversation_id' => $conversation->id,
                 'direction' => ChannelMessage::DIRECTION_OUTBOUND,
                 'external_message_id' => $result['message_id'],
@@ -230,7 +304,12 @@ class InboxController extends Controller
                 'user_id' => $user->id,
             ]);
         } else {
-            return back()->withErrors(['body' => 'Unknown platform'])->withInput();
+            $err = 'Unknown platform';
+            if ($wantsJson) {
+                return response()->json(['message' => $err, 'errors' => ['body' => [$err]]], 422);
+            }
+
+            return back()->withErrors(['body' => $err])->withInput();
         }
 
         $updates = ['last_message_at' => $sentAt];
@@ -238,6 +317,37 @@ class InboxController extends Controller
             $updates['assigned_to_user_id'] = $user->id;
         }
         $conversation->update($updates);
+
+        $message->load('user:id,name');
+        $conversation->refresh();
+        $conversation->loadMissing('channelAccount:id,name,type,is_active');
+
+        if ($wantsJson) {
+            $html = view('admin.inbox.partials.message-bubble', [
+                'm' => $message,
+                'active' => $conversation,
+            ])->render();
+
+            $payload = [
+                'ok' => true,
+                'messages_html' => $html,
+                'last_message_id' => $message->id,
+                'contact' => [
+                    'title' => $conversation->inboxContactTitle(),
+                    'subtitle' => $conversation->inboxHeaderSubtitlePlain(),
+                    'avatar' => $conversation->inboxContactAvatarLetter(),
+                ],
+            ];
+
+            if ($request->boolean('sync_list')) {
+                $payload['list_html'] = $this->renderInboxConversationListHtml(
+                    $this->inboxListFilterRequest($request),
+                    $conversation->id,
+                );
+            }
+
+            return response()->json($payload);
+        }
 
         return redirect()->route('inbox', [
             'conversation' => $conversation->id,

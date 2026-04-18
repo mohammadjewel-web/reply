@@ -40,7 +40,10 @@ function authMiddleware(req, res, next) {
   next();
 }
 
-/** @type {Map<string, { status: string, qrDataUrl: string | null, error: string | null, sock: ReturnType<typeof makeWASocket> | null, starting: Promise<void> | null }>} */
+const MAX_RECONNECT_ATTEMPTS = 12;
+const BASE_RECONNECT_MS = 3000;
+
+/** @type {Map<string, { status: string, qrDataUrl: string | null, error: string | null, sock: ReturnType<typeof makeWASocket> | null, starting: Promise<void> | null, reconnectTimer: ReturnType<typeof setTimeout> | null, reconnectAttempts: number }>} */
 const sessions = new Map();
 
 function getOrCreateSlot(key) {
@@ -55,9 +58,43 @@ function getOrCreateSlot(key) {
       error: null,
       sock: null,
       starting: null,
+      reconnectTimer: null,
+      reconnectAttempts: 0,
     });
   }
   return sessions.get(k);
+}
+
+function clearReconnectTimer(slot) {
+  if (slot.reconnectTimer) {
+    clearTimeout(slot.reconnectTimer);
+    slot.reconnectTimer = null;
+  }
+}
+
+function scheduleReconnect(rawKey, slot, lastError) {
+  const k = sanitizeKey(rawKey);
+  slot.reconnectAttempts += 1;
+  if (slot.reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+    slot.status = 'error';
+    slot.error =
+      lastError ||
+      'Connection failed after multiple retries. Click Generate pairing QR again.';
+    return;
+  }
+  const delay = Math.min(BASE_RECONNECT_MS * slot.reconnectAttempts, 30_000);
+  const errBit = lastError ? `${lastError} ` : '';
+  slot.status = 'reconnecting';
+  slot.error = `${errBit}(reconnecting ${slot.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${Math.round(delay / 1000)}s)`;
+
+  clearReconnectTimer(slot);
+  slot.reconnectTimer = setTimeout(() => {
+    slot.reconnectTimer = null;
+    slot.starting = attachConnection(rawKey).catch((e) => {
+      slot.status = 'error';
+      slot.error = e instanceof Error ? e.message : String(e);
+    });
+  }, delay);
 }
 
 async function destroySession(key) {
@@ -66,6 +103,8 @@ async function destroySession(key) {
   if (!slot) {
     return;
   }
+  clearReconnectTimer(slot);
+  slot.reconnectAttempts = 0;
   if (slot.sock) {
     try {
       slot.sock.end(new Error('session_restart'));
@@ -80,17 +119,26 @@ async function destroySession(key) {
   slot.status = 'idle';
 }
 
-async function startSession(rawKey) {
+/**
+ * Create socket and wire events. Used for initial start and auto-reconnect (same auth folder).
+ */
+async function attachConnection(rawKey) {
   const k = sanitizeKey(rawKey);
   if (!k) {
     throw new Error('Invalid sessionKey');
   }
 
-  await destroySession(k);
   const slot = getOrCreateSlot(k);
+  if (slot.sock) {
+    try {
+      slot.sock.end(new Error('session_replace'));
+    } catch {
+      // ignore
+    }
+    slot.sock = null;
+  }
+
   slot.status = 'starting';
-  slot.error = null;
-  slot.qrDataUrl = null;
 
   const { state, saveCreds } = await useMultiFileAuthState(authDir(k));
   let version;
@@ -127,6 +175,8 @@ async function startSession(rawKey) {
     }
 
     if (connection === 'open') {
+      slot.reconnectAttempts = 0;
+      clearReconnectTimer(slot);
       slot.status = 'connected';
       slot.qrDataUrl = null;
       slot.error = null;
@@ -134,21 +184,38 @@ async function startSession(rawKey) {
 
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const loggedOut = statusCode === DisconnectReason.loggedOut;
-      slot.qrDataUrl = null;
-      if (loggedOut) {
-        slot.status = 'logged_out';
-        slot.error = 'Logged out';
-        slot.sock = null;
-        return;
-      }
-      slot.status = 'disconnected';
-      slot.error = lastDisconnect?.error?.message
+      const errMsg = lastDisconnect?.error?.message
         ? String(lastDisconnect.error.message)
         : 'Connection closed';
+
+      slot.qrDataUrl = null;
       slot.sock = null;
+
+      if (statusCode === DisconnectReason.loggedOut) {
+        clearReconnectTimer(slot);
+        slot.reconnectAttempts = 0;
+        slot.status = 'logged_out';
+        slot.error = 'Logged out';
+        return;
+      }
+
+      scheduleReconnect(rawKey, slot, errMsg);
     }
   });
+}
+
+async function startSession(rawKey) {
+  const k = sanitizeKey(rawKey);
+  if (!k) {
+    throw new Error('Invalid sessionKey');
+  }
+
+  await destroySession(k);
+  const slot = getOrCreateSlot(k);
+  slot.error = null;
+  slot.qrDataUrl = null;
+
+  await attachConnection(rawKey);
 }
 
 app.get('/', (req, res) => {

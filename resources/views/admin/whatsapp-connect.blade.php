@@ -218,6 +218,13 @@
                             const data = await res.json().catch(function () {
                                 return {};
                             });
+                            if (!res.ok) {
+                                this.lineError =
+                                    data.error ||
+                                    this.msgStartError + ' (HTTP ' + res.status + ')';
+                                this.lineStatus = 'error';
+                                return;
+                            }
                             if (!data.ok) {
                                 this.lineError = data.error || this.msgStartError;
                                 this.lineStatus = 'error';

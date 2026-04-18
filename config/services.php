@@ -64,8 +64,8 @@ return [
     */
     'baileys' => [
         'enabled' => (bool) env('BAILEYS_SERVICE_ENABLED', false),
-        'url' => env('BAILEYS_SERVICE_URL'),
-        'secret' => env('BAILEYS_SERVICE_SECRET'),
+        'url' => env('BAILEYS_SERVICE_URL') ? rtrim((string) env('BAILEYS_SERVICE_URL'), '/') : null,
+        'secret' => is_string(env('BAILEYS_SERVICE_SECRET')) ? trim((string) env('BAILEYS_SERVICE_SECRET')) : null,
     ],
 
 ];

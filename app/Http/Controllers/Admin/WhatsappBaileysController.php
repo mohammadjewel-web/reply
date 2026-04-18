@@ -7,6 +7,7 @@ use App\Models\ChannelAccount;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Throwable;
 
 class WhatsappBaileysController extends Controller
 {
@@ -49,15 +50,35 @@ class WhatsappBaileysController extends Controller
 
         $key = $this->sessionKey($request, $account);
 
-        $response = Http::timeout(20)
-            ->withHeaders(['X-Baileys-Secret' => $secret])
-            ->acceptJson()
-            ->post($base.'/session/start', ['sessionKey' => $key]);
-
-        if (! $response->successful()) {
+        try {
+            $response = Http::timeout(20)
+                ->withHeaders(['X-Baileys-Secret' => $secret])
+                ->acceptJson()
+                ->post($base.'/session/start', ['sessionKey' => $key]);
+        } catch (Throwable $e) {
             return response()->json([
                 'ok' => false,
-                'error' => $response->json('error') ?? $response->body() ?: __('Baileys start failed.'),
+                'error' => __('Cannot reach Baileys at :url. Start Node in baileys-service (npm start) and check the same BAILEYS_SERVICE_SECRET. Details: :msg', [
+                    'url' => $base,
+                    'msg' => $e->getMessage(),
+                ]),
+            ], 502);
+        }
+
+        if (! $response->successful()) {
+            $detail = $response->json('error')
+                ?? $response->json('message')
+                ?? (strlen($response->body()) < 500 ? $response->body() : null);
+
+            $message = $detail
+                ? (string) $detail
+                : __('Baileys HTTP :status. Check X-Baileys-Secret matches Node BAILEYS_SERVICE_SECRET.', [
+                    'status' => $response->status(),
+                ]);
+
+            return response()->json([
+                'ok' => false,
+                'error' => $message,
             ], 502);
         }
 
@@ -94,15 +115,22 @@ class WhatsappBaileysController extends Controller
 
         $key = $this->sessionKey($request, $account);
 
-        $response = Http::timeout(12)
-            ->withHeaders(['X-Baileys-Secret' => $secret])
-            ->acceptJson()
-            ->get($base.'/session/'.rawurlencode($key).'/status');
+        try {
+            $response = Http::timeout(12)
+                ->withHeaders(['X-Baileys-Secret' => $secret])
+                ->acceptJson()
+                ->get($base.'/session/'.rawurlencode($key).'/status');
+        } catch (Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'error' => __('Cannot reach Baileys: :msg', ['msg' => $e->getMessage()]),
+            ], 502);
+        }
 
         if (! $response->successful()) {
             return response()->json([
                 'ok' => false,
-                'error' => __('Could not read Baileys session status.'),
+                'error' => $response->json('error') ?? __('Baileys status HTTP :status.', ['status' => $response->status()]),
             ], 502);
         }
 

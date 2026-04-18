@@ -19,7 +19,7 @@ class InboxController extends Controller
     public function index(Request $request): View
     {
         $query = Conversation::query()
-            ->with(['channelAccount:id,name,type', 'assignee:id,name'])
+            ->with(['channelAccount:id,name,type,is_active', 'assignee:id,name'])
             ->orderByDesc('last_message_at')
             ->orderByDesc('id');
 
@@ -41,7 +41,7 @@ class InboxController extends Controller
         $activeId = $request->query('conversation');
         $active = $activeId
             ? Conversation::query()
-                ->with(['channelAccount:id,name,type', 'assignee:id,name'])
+                ->with(['channelAccount:id,name,type,is_active', 'assignee:id,name'])
                 ->find($activeId)
             : $conversations->first();
 

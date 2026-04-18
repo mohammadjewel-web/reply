@@ -29,11 +29,12 @@
             data-inbox-last-message-id="{{ (int) ($active ? ($messages->max('id') ?? 0) : 0) }}"
             data-inbox-list-assignee="{{ request('assignee', 'all') }}"
             data-inbox-list-account="{{ request('account') ?? '' }}"
-            x-data="inboxPage({
-                mobileListOpen: @json(! $showThreadMobile),
-                listAssignee: @json(request('assignee', 'all')),
-                listAccount: @json(request('account')),
-            })"
+            {{-- Never put @json() strings inside double-quoted x-data: "all" breaks the attribute. Use Js::from for one safe blob. --}}
+            x-data="inboxPage({{ \Illuminate\Support\Js::from([
+                'mobileListOpen' => ! $showThreadMobile,
+                'listAssignee' => (string) request('assignee', 'all'),
+                'listAccount' => request('account'),
+            ]) }})"
             x-init="inboxStart()"
         >
             <div

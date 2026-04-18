@@ -1,9 +1,11 @@
 <?php
 
 use App\Models\ChannelMessage;
+use App\Notifications\InboundMessageNotification;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -224,3 +226,27 @@ Artisan::command('inbox:diagnose-media {messageId : channel_messages.id from dat
 
     return Command::SUCCESS;
 })->purpose('Debug stored paths vs disk and payload shape for one inbox message');
+
+Artisan::command('chat:clear-history {--force : Skip confirmation prompts}', function () {
+    if (! $this->option('force')) {
+        if (! $this->confirm('Delete ALL conversations, channel messages, and inbound-message notifications? (Users, roles, connections, and settings are kept.)')) {
+            return Command::FAILURE;
+        }
+        if (app()->environment('production') && ! $this->confirm('You are in production. Really delete all chat history?')) {
+            return Command::FAILURE;
+        }
+    }
+
+    $convCount = (int) DB::table('conversations')->count();
+    $msgCount = (int) DB::table('channel_messages')->count();
+    $notifCount = (int) DB::table('notifications')->where('type', InboundMessageNotification::class)->count();
+
+    DB::transaction(function () {
+        DB::table('notifications')->where('type', InboundMessageNotification::class)->delete();
+        DB::table('conversations')->delete();
+    });
+
+    $this->info("Cleared {$msgCount} message(s), {$convCount} conversation(s), {$notifCount} inbox notification(s).");
+
+    return Command::SUCCESS;
+})->purpose('Remove chat history only (conversations + messages + inbound notifications); does not reset users or channel accounts');

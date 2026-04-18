@@ -9,6 +9,9 @@ use Throwable;
 
 class BaileysRelayService
 {
+    /** Media send requires POST /session/send-media (server.mjs SERVICE_REV 12+). */
+    private const BAILEYS_MIN_MEDIA_REV = 12;
+
     /**
      * @return array{ok: bool, message_id: ?string, error: ?string}
      */
@@ -131,6 +134,15 @@ class BaileysRelayService
             return ['ok' => false, 'message_id' => null, 'error' => 'Invalid media type'];
         }
 
+        $health = self::fetchBaileysHealthJson($base);
+        if ($health !== null && ! self::mediaSendSupportedByHealth($health)) {
+            return [
+                'ok' => false,
+                'message_id' => null,
+                'error' => self::formatBaileysStaleForMediaMessage($base, $health, false),
+            ];
+        }
+
         try {
             $request = Http::timeout(120)
                 ->withHeaders(['X-Baileys-Secret' => $secret])
@@ -172,16 +184,12 @@ class BaileysRelayService
         if (! $response->successful()) {
             $body = $response->body();
             if (self::responseLooksLikeMissingSendMediaRoute($response, $body)) {
+                $h = self::fetchBaileysHealthJson($base) ?? $health;
+
                 return [
                     'ok' => false,
                     'message_id' => null,
-                    'error' => __(
-                        'WhatsApp media send failed: the Baileys Node process Laravel reaches does not handle POST /session/send-media (stale Node, wrong host, or PHP not on the same machine as Baileys). On the app server run: php artisan baileys:verify — it must report send-media OK. Then: pull latest code, cd baileys-service, npm install, restart Node. Check curl -s :health_url — expect rev 12+ and routes.sendMedia true. Laravel posts to :endpoint.',
-                        [
-                            'health_url' => $base.'/health',
-                            'endpoint' => $base.'/session/send-media',
-                        ]
-                    ),
+                    'error' => self::formatBaileysStaleForMediaMessage($base, $h, true),
                 ];
             }
             $err = $response->json('error') ?? $body;
@@ -207,5 +215,65 @@ class BaileysRelayService
         }
 
         return false;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private static function fetchBaileysHealthJson(string $base): ?array
+    {
+        try {
+            $r = Http::timeout(3)->get($base.'/health');
+            if (! $r->successful()) {
+                return null;
+            }
+            $j = $r->json();
+
+            return is_array($j) ? $j : null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $healthJson
+     */
+    private static function mediaSendSupportedByHealth(array $healthJson): bool
+    {
+        if (($healthJson['service'] ?? null) !== 'baileys') {
+            return true;
+        }
+        if (($healthJson['routes']['sendMedia'] ?? null) === true) {
+            return true;
+        }
+        $rev = isset($healthJson['rev']) ? (int) $healthJson['rev'] : 0;
+
+        return $rev >= self::BAILEYS_MIN_MEDIA_REV;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $healthJson
+     */
+    private static function formatBaileysStaleForMediaMessage(string $base, ?array $healthJson, bool $nodeSaidCannotPost): string
+    {
+        $revLabel = is_array($healthJson) && array_key_exists('rev', $healthJson)
+            ? (string) $healthJson['rev']
+            : '?';
+
+        $baseMsg = __(
+            'WhatsApp media needs Baileys rev :min_rev+ (POST /session/send-media). This server still reports rev :rev at :health_url — the Node process was not restarted after deploy (`npm install` alone does not reload it). SSH to the app host, stop the old process (e.g. `ps aux | grep server.mjs` then `kill <pid>`, or `pm2 restart <name>`), then `cd baileys-service && npm start`. Confirm with `curl -s :health_url` (rev :min_rev+, routes.sendMedia true) and `php artisan baileys:verify`. Laravel posts media to :endpoint.',
+            [
+                'min_rev' => (string) self::BAILEYS_MIN_MEDIA_REV,
+                'rev' => $revLabel,
+                'health_url' => $base.'/health',
+                'endpoint' => $base.'/session/send-media',
+            ]
+        );
+
+        if (! $nodeSaidCannotPost) {
+            return $baseMsg;
+        }
+
+        return $baseMsg.' '.__('Node responded with “Cannot POST /session/send-media” (route missing in that process).');
     }
 }

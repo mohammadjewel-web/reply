@@ -682,5 +682,7 @@ app.get('/session/:key/status', authMiddleware, async (req, res) => {
 
 app.listen(PORT, '127.0.0.1', () => {
   // eslint-disable-next-line no-console
-  console.log(`Baileys service listening on http://127.0.0.1:${PORT}`);
+  console.log(
+    `Baileys service rev ${SERVICE_REV} on http://127.0.0.1:${PORT} (POST /session/send-media registered)`,
+  );
 });

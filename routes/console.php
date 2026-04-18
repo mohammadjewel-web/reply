@@ -4,6 +4,7 @@ use Illuminate\Console\Command;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -72,6 +73,17 @@ Artisan::command('baileys:verify {--dotenv= : Absolute path to baileys-service/.
         $this->line('GET /health → HTTP '.$health->status());
         if ($health->successful()) {
             $this->line($health->body());
+            $j = $health->json();
+            if (is_array($j)) {
+                $rev = $j['rev'] ?? null;
+                $sendMedia = $j['routes']['sendMedia'] ?? null;
+                if (is_numeric($rev) && (int) $rev < 12) {
+                    $this->warn('Health reports rev '.(string) $rev.' — media send needs rev 12+ (POST /session/send-media). Update baileys-service and restart Node.');
+                }
+                if ($sendMedia !== true) {
+                    $this->warn('Health does not report routes.sendMedia: true — running Node is probably outdated.');
+                }
+            }
         }
 
         $ping = Http::timeout(8)
@@ -87,26 +99,66 @@ Artisan::command('baileys:verify {--dotenv= : Absolute path to baileys-service/.
             return Command::FAILURE;
         }
 
-        if ($ping->successful()) {
-            $this->info('OK — running Node accepted the same secret Laravel uses for HTTP calls.');
+        if (! $ping->successful()) {
+            if ($ping->status() === 401) {
+                $this->error('401 from Node: the RUNNING process does not use the same secret as Laravel.');
+                $this->line('Fix: 1) Align BAILEYS_SERVICE_SECRET in Laravel .env and baileys-service/.env');
+                $this->line('       2) php artisan config:clear && (restart php-fpm if production)');
+                $this->line('       3) pkill -f \'node server.mjs\'; cd baileys-service && nvm use 20 && nohup npm start >> /tmp/baileys.log 2>&1 &');
+                $this->line('If Laravel and peer .env MATCH above but ping still 401, Node was not restarted after editing .env.');
+            } else {
+                $this->error('Ping did not succeed. Fix Baileys URL, firewall, or Node process.');
+            }
+
+            return Command::FAILURE;
+        }
+
+        $this->info('OK — running Node accepted the same secret Laravel uses for HTTP calls.');
+
+        $sm = Http::timeout(15)
+            ->withHeaders(['X-Baileys-Secret' => $secret])
+            ->attach('file', '', 'probe.png', ['Content-Type' => 'image/png'])
+            ->post($base.'/session/send-media', [
+                'sessionKey' => 'verify-probe',
+                'to' => '12345678901',
+                'mediaType' => 'image',
+            ]);
+
+        $this->line('POST /session/send-media (empty file probe) → HTTP '.$sm->status());
+        $smBody = $sm->body();
+        if (str_contains($smBody, 'Cannot POST /session/send-media')) {
+            $this->error('send-media route missing on the Node process Laravel is calling. Restart Node after deploying baileys-service (see npm start → server.mjs).');
+
+            return Command::FAILURE;
+        }
+        if ($sm->status() === 404 && str_contains($smBody, 'Cannot POST')) {
+            $this->error('send-media route missing (404 + Express “Cannot POST”). Deploy latest server.mjs and restart Node.');
+
+            return Command::FAILURE;
+        }
+        if ($sm->successful()) {
+            $this->warn('Unexpected 200 from send-media probe (expected 400 for empty file).');
 
             return Command::SUCCESS;
         }
+        $sj = $sm->json();
+        if (is_array($sj) && ($sj['ok'] === false || isset($sj['error']))) {
+            $this->info('send-media route OK — Node returned expected error for probe: '.(string) ($sj['error'] ?? json_encode($sj)));
 
-        if ($ping->status() === 401) {
-            $this->error('401 from Node: the RUNNING process does not use the same secret as Laravel.');
-            $this->line('Fix: 1) Align BAILEYS_SERVICE_SECRET in Laravel .env and baileys-service/.env');
-            $this->line('       2) php artisan config:clear && (restart php-fpm if production)');
-            $this->line('       3) pkill -f \'node server.mjs\'; cd baileys-service && nvm use 20 && nohup npm start >> /tmp/baileys.log 2>&1 &');
-            $this->line('If Laravel and peer .env MATCH above but ping still 401, Node was not restarted after editing .env.');
-        } else {
-            $this->error('Ping did not succeed. Fix Baileys URL, firewall, or Node process.');
+            return Command::SUCCESS;
         }
+        $this->line(Str::limit($smBody, 500));
+        if ($sm->status() === 400) {
+            $this->info('send-media route OK (HTTP 400 from probe).');
 
-        return Command::FAILURE;
+            return Command::SUCCESS;
+        }
+        $this->warn('send-media probe unclear; check response above. Image send may still fail.');
+
+        return Command::SUCCESS;
     } catch (Throwable $e) {
         $this->error('Request failed: '.$e->getMessage());
 
         return Command::FAILURE;
     }
-})->purpose('Check Baileys Node /health, compare secrets to baileys-service/.env, POST /session/ping');
+})->purpose('Check Baileys Node /health, secrets, POST /session/ping, and POST /session/send-media (probe)');

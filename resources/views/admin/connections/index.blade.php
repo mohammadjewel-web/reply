@@ -246,6 +246,42 @@
         </section>
     </div>
 
+    <dialog
+        id="connection-remove-dialog"
+        class="w-[calc(100%-2rem)] max-w-md rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl [&::backdrop]:bg-slate-900/50"
+        aria-labelledby="connection-remove-title"
+    >
+        <div class="border-b border-slate-100 px-6 py-4">
+            <h2 id="connection-remove-title" class="text-lg font-semibold text-slate-900">{{ __('Remove connection?') }}</h2>
+            <p class="mt-2 text-sm text-slate-600">
+                {{ __('You are about to remove') }}
+                <strong id="connection-remove-name" class="text-slate-900"></strong>
+                {{ __('from Connections. Chat history stays in the inbox; sending stays disabled until you add a connection again.') }}
+            </p>
+            <p class="mt-2 text-xs text-slate-500">{{ __('This only deletes the connection row and credentials. It does not erase past messages.') }}</p>
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-2 px-6 py-4">
+            <button
+                type="button"
+                id="connection-remove-cancel"
+                class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+                {{ __('Cancel') }}
+            </button>
+            <button
+                type="button"
+                id="connection-remove-confirm"
+                class="inline-flex items-center justify-center rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-700"
+            >
+                {{ __('Remove connection') }}
+            </button>
+        </div>
+    </dialog>
+    <form id="connection-destroy-form" method="post" class="hidden">
+        @csrf
+        @method('DELETE')
+    </form>
+
     @push('scripts')
         <script>
             (function () {
@@ -300,6 +336,48 @@
                         next.classList.toggle('hidden');
                     }
                 });
+
+                const removeDialog = document.getElementById('connection-remove-dialog');
+                const destroyForm = document.getElementById('connection-destroy-form');
+                const removeNameEl = document.getElementById('connection-remove-name');
+                const removeConfirm = document.getElementById('connection-remove-confirm');
+                const removeCancel = document.getElementById('connection-remove-cancel');
+                let removeTargetUrl = '';
+
+                document.addEventListener('click', function (e) {
+                    const trigger = e.target.closest('[data-connection-remove]');
+                    if (!trigger || !removeDialog || !destroyForm || !removeNameEl) return;
+                    e.preventDefault();
+                    removeTargetUrl = trigger.getAttribute('data-remove-url') || '';
+                    removeNameEl.textContent = trigger.getAttribute('data-remove-name') || '';
+                    if (typeof removeDialog.showModal === 'function') {
+                        removeDialog.showModal();
+                    }
+                });
+
+                if (removeCancel && removeDialog) {
+                    removeCancel.addEventListener('click', function () {
+                        removeDialog.close();
+                        removeTargetUrl = '';
+                    });
+                }
+
+                if (removeConfirm && destroyForm && removeDialog) {
+                    removeConfirm.addEventListener('click', function () {
+                        if (!removeTargetUrl) {
+                            removeDialog.close();
+                            return;
+                        }
+                        destroyForm.action = removeTargetUrl;
+                        destroyForm.submit();
+                    });
+                }
+
+                if (removeDialog) {
+                    removeDialog.addEventListener('cancel', function () {
+                        removeTargetUrl = '';
+                    });
+                }
             })();
         </script>
     @endpush

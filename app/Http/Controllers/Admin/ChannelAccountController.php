@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\AppSetting;
 use App\Models\ChannelAccount;
-use App\Models\Conversation;
 use App\Models\WhatsappLinkSession;
 use App\Services\MessengerGraphService;
 use Illuminate\Http\JsonResponse;
@@ -184,16 +183,12 @@ class ChannelAccountController extends Controller
                 ->where('channel_account_id', $channelAccount->id)
                 ->delete();
 
-            Conversation::query()
-                ->where('channel_account_id', $channelAccount->id)
-                ->delete();
-
             $channelAccount->delete();
         });
 
         return redirect()
             ->route('connections.index')
-            ->with('status', __('The :type connection “:name” and its inbox threads were removed.', [
+            ->with('status', __('The :type connection “:name” was removed. Existing chats and message history stay in the inbox.', [
                 'type' => $typeLabel,
                 'name' => $name,
             ]));

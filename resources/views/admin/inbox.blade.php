@@ -129,6 +129,8 @@
                                     </div>
                                     @if ($c->channelAccount)
                                         <p class="truncate text-[11px] text-slate-500">{{ $c->channelAccount->name }}</p>
+                                    @else
+                                        <p class="truncate text-[11px] text-slate-500">{{ __('Connection removed — history kept') }}</p>
                                     @endif
                                     <div class="mt-0.5 flex flex-wrap items-center gap-1.5">
                                         @if ($c->assignee)
@@ -228,6 +230,8 @@
                                     </div>
                                     @if ($c->channelAccount)
                                         <p class="truncate text-[11px] text-slate-500">{{ $c->channelAccount->name }}</p>
+                                    @else
+                                        <p class="truncate text-[11px] text-slate-500">{{ __('Connection removed — history kept') }}</p>
                                     @endif
                                     <div class="mt-0.5 flex flex-wrap items-center gap-1.5">
                                         @if ($c->assignee)
@@ -258,6 +262,7 @@
                             $assignAction = route('inbox.assign', $active).($assignQs !== '' ? $assignQs : '');
                             $replyQs = $filterQs();
                             $replyAction = route('inbox.reply', $active).($replyQs !== '' ? $replyQs : '');
+                            $canReply = $active->channelAccount && $active->channelAccount->is_active;
                         @endphp
                         <div
                             class="z-10 flex shrink-0 flex-wrap items-center gap-2 px-3 py-2.5 {{ $headerClass }} text-white shadow-md sm:px-4"
@@ -285,6 +290,8 @@
                                     @endif
                                     @if ($active->channelAccount)
                                         · {{ $active->channelAccount->name }}
+                                    @else
+                                        · {{ __('Connection removed') }}
                                     @endif
                                     · {{ $active->external_thread_key }}
                                 </p>
@@ -390,32 +397,38 @@
                             </div>
 
                             <div class="z-10 shrink-0 border-t border-slate-200/80 bg-[#f0f0f0] px-3 py-3 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] sm:px-4">
-                                <form method="post" action="{{ $replyAction }}" class="flex items-end gap-2">
-                                    @csrf
-                                    <label for="chat-body" class="sr-only">{{ __('Message') }}</label>
-                                    <div class="min-w-0 flex-1 rounded-3xl border border-slate-200 bg-white shadow-inner transition-shadow focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/30">
-                                        <textarea
-                                            id="chat-body"
-                                            name="body"
-                                            rows="1"
-                                            required
-                                            class="block max-h-32 w-full resize-none rounded-3xl border-0 bg-transparent px-4 py-3 text-[15px] text-slate-900 placeholder:text-slate-400 focus:ring-0"
-                                            placeholder="{{ $active->platform === 'whatsapp' ? __('Message') : __('Aa') }}…"
-                                            @input="$el.style.height = 'auto'; $el.style.height = Math.min($el.scrollHeight, 128) + 'px'"
-                                        >{{ old('body') }}</textarea>
+                                @if ($canReply)
+                                    <form method="post" action="{{ $replyAction }}" class="flex items-end gap-2">
+                                        @csrf
+                                        <label for="chat-body" class="sr-only">{{ __('Message') }}</label>
+                                        <div class="min-w-0 flex-1 rounded-3xl border border-slate-200 bg-white shadow-inner transition-shadow focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/30">
+                                            <textarea
+                                                id="chat-body"
+                                                name="body"
+                                                rows="1"
+                                                required
+                                                class="block max-h-32 w-full resize-none rounded-3xl border-0 bg-transparent px-4 py-3 text-[15px] text-slate-900 placeholder:text-slate-400 focus:ring-0"
+                                                placeholder="{{ $active->platform === 'whatsapp' ? __('Message') : __('Aa') }}…"
+                                                @input="$el.style.height = 'auto'; $el.style.height = Math.min($el.scrollHeight, 128) + 'px'"
+                                            >{{ old('body') }}</textarea>
+                                        </div>
+                                        <button
+                                            type="submit"
+                                            class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-white shadow-md transition-transform active:scale-95 disabled:opacity-50
+                                                {{ $active->platform === 'whatsapp' ? 'bg-[#25d366] hover:bg-[#20bd5a]' : 'bg-[#0084ff] hover:bg-[#0073e6]' }}"
+                                            title="{{ __('Send') }}"
+                                        >
+                                            <svg class="-ms-0.5 h-6 w-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                                            </svg>
+                                            <span class="sr-only">{{ __('Send') }}</span>
+                                        </button>
+                                    </form>
+                                @else
+                                    <div class="rounded-2xl border border-slate-200/90 bg-white/95 px-4 py-3 text-center text-sm text-slate-600 shadow-sm">
+                                        {{ __('This chat is not linked to an active connection. You can read the history; add a connection again to send messages.') }}
                                     </div>
-                                    <button
-                                        type="submit"
-                                        class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-white shadow-md transition-transform active:scale-95 disabled:opacity-50
-                                            {{ $active->platform === 'whatsapp' ? 'bg-[#25d366] hover:bg-[#20bd5a]' : 'bg-[#0084ff] hover:bg-[#0073e6]' }}"
-                                        title="{{ __('Send') }}"
-                                    >
-                                        <svg class="-ms-0.5 h-6 w-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                                        </svg>
-                                        <span class="sr-only">{{ __('Send') }}</span>
-                                    </button>
-                                </form>
+                                @endif
                                 <x-input-error :messages="$errors->get('body')" class="mt-2 text-center" />
                                 <x-input-error :messages="$errors->get('assigned_to_user_id')" class="mt-2 text-center" />
                             </div>

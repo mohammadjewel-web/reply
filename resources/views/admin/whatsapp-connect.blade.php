@@ -89,62 +89,7 @@
         @if ($baileys['enabled'] && $baileys['channelAccountId'])
             <div
                 class="app-card border-violet-200/60 bg-gradient-to-br from-violet-50/80 to-white"
-                x-data="{
-                    accountId: {{ (int) $baileys['channelAccountId'] }},
-                    timer: null,
-                    qrDataUrl: null,
-                    lineStatus: 'idle',
-                    lineError: null,
-                    async startPairing() {
-                        this.lineError = null;
-                        this.qrDataUrl = null;
-                        this.lineStatus = 'starting';
-                        if (this.timer) { clearInterval(this.timer); this.timer = null; }
-                        const res = await fetch(@json(route('whatsapp.baileys.start')), {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Accept': 'application/json',
-                                'X-CSRF-TOKEN': @json(csrf_token()),
-                            },
-                            body: JSON.stringify({ channel_account_id: this.accountId }),
-                        });
-                        const data = await res.json().catch(() => ({}));
-                        if (!data.ok) {
-                            this.lineError = data.error || '{{ __('Could not start Baileys session.') }}';
-                            this.lineStatus = 'error';
-                            return;
-                        }
-                        this.pollOnce();
-                        this.timer = setInterval(() => this.pollOnce(), 2000);
-                    },
-                    async pollOnce() {
-                        try {
-                            const url = @json(route('whatsapp.baileys.status')) + '?channel_account_id=' + encodeURIComponent(this.accountId);
-                            const res = await fetch(url, { headers: { Accept: 'application/json' } });
-                            const data = await res.json().catch(() => ({}));
-                            if (!data.ok && data.error) {
-                                this.lineError = data.error;
-                                this.lineStatus = 'error';
-                                if (this.timer) { clearInterval(this.timer); this.timer = null; }
-                                return;
-                            }
-                            this.lineStatus = data.status || 'unknown';
-                            if (data.qrDataUrl) {
-                                this.qrDataUrl = data.qrDataUrl;
-                            }
-                            if (data.error) {
-                                this.lineError = data.error;
-                            }
-                            if (['connected', 'error', 'logged_out'].includes(this.lineStatus)) {
-                                if (this.timer) { clearInterval(this.timer); this.timer = null; }
-                            }
-                        } catch (e) {
-                            this.lineError = '{{ __('Network error while polling Baileys.') }}';
-                            if (this.timer) { clearInterval(this.timer); this.timer = null; }
-                        }
-                    },
-                }"
+                x-data="replyBaileysPairing"
             >
                 <h3 class="app-card__title">{{ __('WhatsApp Web QR (Baileys)') }}</h3>
                 <p class="app-card__lead">
@@ -159,7 +104,7 @@
                         <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/></svg>
                         {{ __('Generate pairing QR') }}
                     </button>
-                    <span class="self-center text-xs text-slate-500" x-text="'{{ __('Status') }}: ' + lineStatus"></span>
+                    <span class="self-center text-xs text-slate-500" x-text="statusLabel + ': ' + lineStatus"></span>
                 </div>
                 <template x-if="lineError">
                     <p class="mt-3 text-sm text-red-700" x-text="lineError"></p>
@@ -236,4 +181,96 @@
             @endif
         </div>
     </div>
+
+    @if ($baileys['enabled'] && $baileys['channelAccountId'])
+        @push('scripts')
+            <script>
+                document.addEventListener('alpine:init', () => {
+                    Alpine.data('replyBaileysPairing', () => ({
+                        accountId: {{ (int) $baileys['channelAccountId'] }},
+                        timer: null,
+                        qrDataUrl: null,
+                        lineStatus: 'idle',
+                        lineError: null,
+                        startUrl: @json(route('whatsapp.baileys.start')),
+                        statusUrl: @json(route('whatsapp.baileys.status')),
+                        csrf: @json(csrf_token()),
+                        msgStartError: @json(__('Could not start Baileys session.')),
+                        msgNetwork: @json(__('Network error while polling Baileys.')),
+                        statusLabel: @json(__('Status')),
+                        async startPairing() {
+                            this.lineError = null;
+                            this.qrDataUrl = null;
+                            this.lineStatus = 'starting';
+                            if (this.timer) {
+                                clearInterval(this.timer);
+                                this.timer = null;
+                            }
+                            const res = await fetch(this.startUrl, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    Accept: 'application/json',
+                                    'X-CSRF-TOKEN': this.csrf,
+                                },
+                                body: JSON.stringify({ channel_account_id: this.accountId }),
+                            });
+                            const data = await res.json().catch(function () {
+                                return {};
+                            });
+                            if (!data.ok) {
+                                this.lineError = data.error || this.msgStartError;
+                                this.lineStatus = 'error';
+                                return;
+                            }
+                            this.pollOnce();
+                            this.timer = setInterval(() => this.pollOnce(), 2000);
+                        },
+                        async pollOnce() {
+                            try {
+                                const url =
+                                    this.statusUrl +
+                                    '?channel_account_id=' +
+                                    encodeURIComponent(this.accountId);
+                                const res = await fetch(url, {
+                                    headers: { Accept: 'application/json' },
+                                });
+                                const data = await res.json().catch(function () {
+                                    return {};
+                                });
+                                if (!data.ok && data.error) {
+                                    this.lineError = data.error;
+                                    this.lineStatus = 'error';
+                                    if (this.timer) {
+                                        clearInterval(this.timer);
+                                        this.timer = null;
+                                    }
+                                    return;
+                                }
+                                this.lineStatus = data.status || 'unknown';
+                                if (data.qrDataUrl) {
+                                    this.qrDataUrl = data.qrDataUrl;
+                                }
+                                if (data.error) {
+                                    this.lineError = data.error;
+                                }
+                                if (['connected', 'error', 'logged_out'].includes(this.lineStatus)) {
+                                    if (this.timer) {
+                                        clearInterval(this.timer);
+                                        this.timer = null;
+                                    }
+                                }
+                            } catch (e) {
+                                this.lineError = this.msgNetwork;
+                                if (this.timer) {
+                                    clearInterval(this.timer);
+                                    this.timer = null;
+                                }
+                            }
+                        },
+                    }));
+                });
+            </script>
+        @endpush
+    @endif
 </x-app-layout>

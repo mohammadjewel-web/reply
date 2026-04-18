@@ -25,7 +25,7 @@
                 mobileListOpen: @json(! $showThreadMobile),
                 lastMessageId: @json((int) ($active ? ($messages->max('id') ?? 0) : 0)),
                 conversationId: @json($active?->id),
-                pollUrl: @json(route('inbox.poll')),
+                pollUrl: @json(route('inbox.poll', [], false)),
                 listAssignee: @json(request('assignee', 'all')),
                 listAccount: @json(request('account')),
             })"
@@ -200,9 +200,9 @@
                     @if ($active)
                         @php
                             $assignQs = $filterQs();
-                            $assignAction = route('inbox.assign', $active).($assignQs !== '' ? $assignQs : '');
+                            $assignAction = route('inbox.assign', $active, false).($assignQs !== '' ? $assignQs : '');
                             $replyQs = $filterQs();
-                            $replyAction = route('inbox.reply', $active).($replyQs !== '' ? $replyQs : '');
+                            $replyAction = route('inbox.reply', $active, false).($replyQs !== '' ? $replyQs : '');
                             $canReply = $active->channelAccount && $active->channelAccount->is_active;
                         @endphp
                         <div

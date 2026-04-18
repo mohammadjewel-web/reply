@@ -164,11 +164,22 @@ document.addEventListener('alpine:init', () => {
                 if (!res.ok) {
                     return;
                 }
+                const raw = await res.text();
+                const bodyTrim = raw.trim();
                 const ct = (res.headers.get('content-type') || '').toLowerCase();
-                if (!ct.includes('application/json')) {
+                const looksJson =
+                    ct.includes('application/json') ||
+                    ct.includes('text/json') ||
+                    (bodyTrim.startsWith('{') && bodyTrim.endsWith('}'));
+                if (!looksJson) {
                     return;
                 }
-                const data = await res.json();
+                let data;
+                try {
+                    data = JSON.parse(raw);
+                } catch {
+                    return;
+                }
                 if (data.messages_html) {
                     this.appendMessagesHtml(data.messages_html);
                 }

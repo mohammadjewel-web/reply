@@ -121,7 +121,11 @@ class InboxController extends Controller
             );
         }
 
-        return response()->json($payload);
+        return response()
+            ->json($payload)
+            ->header('Cache-Control', 'private, no-store, must-revalidate')
+            ->header('Pragma', 'no-cache')
+            ->header('Vary', 'Cookie');
     }
 
     /**

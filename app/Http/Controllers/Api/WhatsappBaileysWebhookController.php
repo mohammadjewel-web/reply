@@ -6,9 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\ChannelAccount;
 use App\Models\ChannelMessage;
 use App\Services\MessageIngestService;
+use App\Support\InboundMessageTimestamp;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
 class WhatsappBaileysWebhookController extends Controller
@@ -168,10 +168,9 @@ class WhatsappBaileysWebhookController extends Controller
             $body = '[message]';
         }
 
-        $sentAt = null;
-        if (isset($data['message_timestamp'])) {
-            $sentAt = Carbon::createFromTimestamp((int) $data['message_timestamp']);
-        }
+        $sentAt = isset($data['message_timestamp'])
+            ? InboundMessageTimestamp::parse($data['message_timestamp'])
+            : null;
 
         $fromMe = (bool) ($data['from_me'] ?? false);
         $direction = $fromMe ? ChannelMessage::DIRECTION_OUTBOUND : ChannelMessage::DIRECTION_INBOUND;

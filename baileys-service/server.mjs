@@ -310,6 +310,22 @@ function fileSuffixForMedia(meta) {
   return map[m] || '';
 }
 
+/** WhatsApp epoch is seconds; some payloads arrive as ms — normalize for Laravel. */
+function normalizeMessageTimestampSeconds(raw) {
+  if (raw == null) {
+    return undefined;
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n)) {
+    return undefined;
+  }
+  let t = Math.floor(n);
+  if (t >= 1_000_000_000_000) {
+    t = Math.floor(t / 1000);
+  }
+  return t;
+}
+
 async function forwardMessageToLaravel(sock, sessionKeyRaw, baileysMsg, notifyType, fromMe) {
   const url = String(process.env.BAILEYS_LARAVEL_WEBHOOK_URL ?? '').trim();
   if (!url) {
@@ -321,9 +337,7 @@ async function forwardMessageToLaravel(sock, sessionKeyRaw, baileysMsg, notifyTy
   }
   const peerJid = peerJidForIngest(baileysMsg);
   const routingJid = baileysMsg.key.remoteJid;
-  const ts = baileysMsg.messageTimestamp
-    ? Number(baileysMsg.messageTimestamp)
-    : undefined;
+  const ts = normalizeMessageTimestampSeconds(baileysMsg.messageTimestamp);
   const pushRaw = baileysMsg.pushName;
   const pushName =
     typeof pushRaw === 'string' && pushRaw.trim() !== '' ? pushRaw.trim() : undefined;
@@ -380,8 +394,8 @@ async function forwardMessageToLaravel(sock, sessionKeyRaw, baileysMsg, notifyTy
       if (baileysMsg.key?.id) {
         fd.append('external_message_id', String(baileysMsg.key.id));
       }
-      if (Number.isFinite(ts)) {
-        fd.append('message_timestamp', String(Math.floor(ts)));
+      if (ts !== undefined) {
+        fd.append('message_timestamp', String(ts));
       }
       fd.append('media_kind', mediaMeta.kind);
       fd.append('media_mime', mediaMeta.mime || 'application/octet-stream');
@@ -419,7 +433,7 @@ async function forwardMessageToLaravel(sock, sessionKeyRaw, baileysMsg, notifyTy
         push_name: pushName,
         body,
         external_message_id: baileysMsg.key.id ?? undefined,
-        message_timestamp: Number.isFinite(ts) ? ts : undefined,
+        message_timestamp: ts,
         payload,
       }),
     });

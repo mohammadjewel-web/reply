@@ -121,7 +121,7 @@
             </div>
             <div class="mt-1 flex items-center gap-1.5 px-1 {{ $isOutbound ? 'justify-end' : 'justify-start' }}">
                 <span class="text-[11px] tabular-nums text-slate-500">
-                    {{ $m->sent_at?->format('g:i A') }}
+                    {{ $m->sent_at?->timezone(config('app.timezone'))->format('g:i A') }}
                 </span>
                 @if ($isOutbound && $m->user)
                     <span class="text-[11px] text-slate-400">· {{ $m->user->name }}</span>

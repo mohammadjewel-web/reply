@@ -7,6 +7,7 @@ use App\Models\ChannelAccount;
 use App\Models\ChannelMessage;
 use App\Services\MessageIngestService;
 use App\Services\WhatsappCloudService;
+use App\Support\InboundMessageTimestamp;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
@@ -149,7 +150,7 @@ class WhatsappWebhookController extends Controller
         } else {
             $body = '['.$type.']';
         }
-        $ts = isset($msg['timestamp']) ? Carbon::createFromTimestamp((int) $msg['timestamp']) : null;
+        $ts = isset($msg['timestamp']) ? InboundMessageTimestamp::parse($msg['timestamp']) : null;
 
         return [$body, $ts];
     }

@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\ChannelAccount;
+use App\Models\ChannelMessage;
+use App\Models\Conversation;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
@@ -269,5 +272,91 @@ class EmployeeManagementTest extends TestCase
         $response->assertRedirect(route('employees.index'));
         $response->assertSessionHasErrors('employee');
         $this->assertDatabaseHas('users', ['id' => $solePanelUser->id]);
+    }
+
+    public function test_guest_cannot_view_employee_profile(): void
+    {
+        $user = User::factory()->create();
+
+        $this->get(route('employees.profile', $user))->assertRedirect(route('login'));
+    }
+
+    public function test_user_without_employees_permission_cannot_view_profile(): void
+    {
+        $noPerm = User::factory()->create([
+            'email_verified_at' => now(),
+            'is_active' => true,
+        ]);
+        $noPerm->roles()->detach();
+
+        $target = User::factory()->create();
+        $target->roles()->detach();
+
+        $this->actingAs($noPerm)->get(route('employees.profile', $target))->assertForbidden();
+    }
+
+    public function test_employee_profile_lists_outbound_messages_and_avoids_caching(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $agent = User::factory()->create([
+            'name' => 'Profile Agent',
+            'email' => 'profile-agent@example.com',
+            'email_verified_at' => now(),
+            'is_active' => true,
+        ]);
+        $agent->roles()->detach();
+
+        $account = ChannelAccount::query()->create([
+            'type' => ChannelAccount::TYPE_WHATSAPP,
+            'name' => 'WA Test',
+            'is_active' => true,
+            'external_id' => 'pn-test-1',
+            'sort_order' => 0,
+        ]);
+
+        $conversation = Conversation::query()->create([
+            'channel_account_id' => $account->id,
+            'external_thread_key' => '15550009999',
+            'platform' => Conversation::PLATFORM_WHATSAPP,
+            'display_name' => 'Customer Test',
+            'metadata' => [],
+        ]);
+
+        ChannelMessage::query()->create([
+            'conversation_id' => $conversation->id,
+            'direction' => ChannelMessage::DIRECTION_OUTBOUND,
+            'body' => 'First staff reply',
+            'user_id' => $agent->id,
+            'sent_at' => now()->subHour(),
+        ]);
+        ChannelMessage::query()->create([
+            'conversation_id' => $conversation->id,
+            'direction' => ChannelMessage::DIRECTION_OUTBOUND,
+            'body' => 'Second staff reply',
+            'user_id' => $agent->id,
+            'sent_at' => now(),
+        ]);
+        ChannelMessage::query()->create([
+            'conversation_id' => $conversation->id,
+            'direction' => ChannelMessage::DIRECTION_INBOUND,
+            'body' => 'Customer inbound',
+            'user_id' => null,
+            'sent_at' => now(),
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('employees.profile', $agent));
+
+        $response->assertOk();
+        $response->assertSee('Profile Agent', false);
+        $response->assertSee('profile-agent@example.com', false);
+        $response->assertSee(number_format(2), false);
+        $response->assertSee('First staff reply', false);
+        $response->assertSee('Second staff reply', false);
+        $response->assertDontSee('Customer inbound', false);
+
+        $cache = $response->headers->get('Cache-Control');
+        $this->assertNotNull($cache);
+        $this->assertStringContainsString('no-store', $cache);
     }
 }

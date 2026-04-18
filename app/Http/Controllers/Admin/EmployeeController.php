@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\AppSetting;
+use App\Models\ChannelMessage;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
@@ -193,6 +195,33 @@ class EmployeeController extends Controller
             'allRoles' => Role::query()->orderBy('name')->get(),
             'canDeleteEmployee' => $this->canDeleteEmployee($user),
         ]);
+    }
+
+    public function profile(User $user): Response
+    {
+        $user->loadMissing('roles');
+
+        $messagesQuery = ChannelMessage::query()
+            ->where('user_id', $user->id)
+            ->where('direction', ChannelMessage::DIRECTION_OUTBOUND);
+
+        $totalMessagesSent = (clone $messagesQuery)->count();
+
+        $messages = (clone $messagesQuery)
+            ->with(['conversation.channelAccount:id,name,type,is_active'])
+            ->orderByDesc('sent_at')
+            ->orderByDesc('id')
+            ->paginate(40)
+            ->withQueryString();
+
+        return response()
+            ->view('admin.employees.profile', [
+                'employee' => $user,
+                'totalMessagesSent' => $totalMessagesSent,
+                'messages' => $messages,
+            ])
+            ->header('Cache-Control', 'private, no-store, no-cache, must-revalidate')
+            ->header('Pragma', 'no-cache');
     }
 
     public function sendVerification(User $user): RedirectResponse

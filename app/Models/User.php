@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -93,6 +93,17 @@ class User extends Authenticatable implements MustVerifyEmail
     public function assignedConversations(): HasMany
     {
         return $this->hasMany(Conversation::class, 'assigned_to_user_id');
+    }
+
+    /**
+     * Outbound inbox / channel messages sent by this user from the panel.
+     *
+     * @return HasMany<ChannelMessage, static>
+     */
+    public function sentChannelMessages(): HasMany
+    {
+        return $this->hasMany(ChannelMessage::class, 'user_id')
+            ->where('direction', ChannelMessage::DIRECTION_OUTBOUND);
     }
 
     public function isUserActive(): bool

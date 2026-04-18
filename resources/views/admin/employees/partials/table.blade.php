@@ -78,6 +78,12 @@
                         </td>
                         <td class="px-4 py-4 text-end sm:px-6">
                             <div class="flex flex-col items-end gap-2 sm:flex-row sm:justify-end">
+                                <a
+                                    href="{{ route('employees.profile', $employee) }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-[color:var(--app-card-border)] bg-[color:var(--app-card-bg)] px-3 py-2 text-xs font-semibold text-[color:var(--app-text)] shadow-sm transition hover:bg-[color:var(--app-shell-bg)] sm:w-auto"
+                                >{{ __('Profile') }}</a>
                                 <a href="{{ route('employees.edit', $employee) }}" class="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-[color:var(--app-card-border)] bg-[color:var(--app-card-bg)] px-3 py-2 text-xs font-semibold text-[color:var(--app-text)] shadow-sm transition hover:bg-[color:var(--app-shell-bg)] sm:w-auto">{{ __('Edit') }}</a>
                                 @unless ($isOwnRowAdmin)
                                     <button type="submit" form="{{ $formId }}" class="app-btn-primary whitespace-nowrap">{{ __('Save') }}</button>

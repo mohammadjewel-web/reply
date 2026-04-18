@@ -116,6 +116,7 @@ Route::middleware(['auth', 'verified', 'active', 'perm:employees.manage'])->grou
     Route::get('/employees/create', [EmployeeController::class, 'create'])->name('employees.create');
     Route::post('/employees', [EmployeeController::class, 'store'])->name('employees.store');
     Route::post('/employees/{user}/send-verification', [EmployeeController::class, 'sendVerification'])->name('employees.verification.send');
+    Route::get('/employees/{user}/profile', [EmployeeController::class, 'profile'])->name('employees.profile');
     Route::get('/employees/{user}/edit', [EmployeeController::class, 'edit'])->name('employees.edit');
     Route::patch('/employees/{user}', [EmployeeController::class, 'update'])->name('employees.update');
     Route::delete('/employees/{user}', [EmployeeController::class, 'destroy'])->name('employees.destroy');

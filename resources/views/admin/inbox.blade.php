@@ -11,6 +11,7 @@
     $fbHeader = 'bg-[#0084ff]';
     $headerClass = $active && $active->platform === 'whatsapp' ? $waHeader : ($active && $active->platform === 'messenger' ? $fbHeader : 'bg-slate-700');
     $showThreadMobile = (bool) $active;
+    $inboxChatEmojis = config('chat_emojis', []);
 @endphp
 
 <x-app-layout>
@@ -302,22 +303,20 @@
                                             accept="image/*,video/*,audio/*"
                                         />
 
+                                        {{-- Emoji grid is server-rendered so Alpine never evaluates chatEmojis / emojiOpen bindings in a broken scope. Visibility toggled via inboxPage.syncComposerUi(). --}}
                                         <div
-                                            x-show="emojiOpen"
-                                            x-cloak
-                                            x-transition
-                                            class="max-h-36 overflow-y-auto rounded-2xl border border-slate-200 bg-white px-2 py-2 shadow-inner"
+                                            data-inbox-emoji-panel
+                                            class="hidden max-h-36 overflow-y-auto rounded-2xl border border-slate-200 bg-white px-2 py-2 shadow-inner"
                                         >
                                             <div class="flex flex-wrap gap-1">
-                                                <template x-for="em in chatEmojis" :key="em">
+                                                @foreach ($inboxChatEmojis as $em)
                                                     <button
                                                         type="button"
                                                         class="flex h-9 w-9 items-center justify-center rounded-lg text-xl hover:bg-slate-100"
-                                                        x-text="em"
                                                         data-inbox-act="insertEmoji"
-                                                        :data-inbox-emoji="em"
-                                                    ></button>
-                                                </template>
+                                                        data-inbox-emoji="{{ $em }}"
+                                                    >{{ $em }}</button>
+                                                @endforeach
                                             </div>
                                         </div>
 
@@ -350,14 +349,14 @@
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        class="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-200/80"
-                                                        :class="recording ? 'bg-rose-100 text-rose-700 ring-2 ring-rose-400' : 'text-slate-600'"
+                                                        data-inbox-voice-btn
+                                                        class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-200/80"
                                                         data-inbox-act="toggleVoiceRecord"
                                                         title="{{ __('Voice message') }}"
                                                     >
                                                         <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
                                                     </button>
-                                                    <span x-show="pendingVoiceBlob || hasPendingFile" x-cloak class="ms-1 text-[11px] text-slate-500">
+                                                    <span data-inbox-attachment-hint class="ms-1 hidden text-[11px] text-slate-500">
                                                         <button type="button" class="font-medium text-emerald-700 underline" data-inbox-act="clearAttachment">{{ __('Clear attachment') }}</button>
                                                     </span>
                                                 </div>

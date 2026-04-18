@@ -30,19 +30,35 @@
                 style="word-break: break-word;"
             >
                 @if ($mediaUrl && $mediaKind === 'image')
-                    <a href="{{ $mediaUrl }}" target="_blank" rel="noopener noreferrer" class="block">
-                        <img src="{{ $mediaUrl }}" alt="" class="max-h-64 max-w-full rounded-lg object-contain" loading="lazy" />
+                    <a href="{{ $mediaUrl }}" target="_blank" rel="noopener noreferrer" class="block overflow-hidden rounded-xl ring-1 ring-black/10">
+                        <img
+                            src="{{ $mediaUrl }}"
+                            alt=""
+                            class="max-h-72 max-w-full cursor-zoom-in object-contain transition hover:opacity-95"
+                            loading="lazy"
+                            decoding="async"
+                        />
                     </a>
                     @if (filled($m->body) && ! str_starts_with((string) $m->body, '['))
                         <p class="mt-2 whitespace-pre-wrap">{{ $m->body }}</p>
                     @endif
                 @elseif ($mediaUrl && $mediaKind === 'video')
-                    <video src="{{ $mediaUrl }}" controls class="max-h-64 max-w-full rounded-lg" preload="metadata"></video>
+                    <div class="overflow-hidden rounded-xl bg-black/90 ring-1 ring-black/15">
+                        <video
+                            src="{{ $mediaUrl }}"
+                            controls
+                            playsinline
+                            preload="metadata"
+                            class="max-h-72 w-full max-w-full object-contain"
+                        >{{ __('Your browser does not support video.') }}</video>
+                    </div>
                     @if (filled($m->body) && ! str_starts_with((string) $m->body, '['))
                         <p class="mt-2 whitespace-pre-wrap">{{ $m->body }}</p>
                     @endif
                 @elseif ($mediaUrl && in_array($mediaKind, ['audio', 'ptt'], true))
-                    <audio src="{{ $mediaUrl }}" controls class="w-full min-w-[12rem] max-w-full"></audio>
+                    <div class="rounded-xl bg-slate-100/90 px-2 py-2 ring-1 ring-slate-200/80">
+                        <audio src="{{ $mediaUrl }}" controls preload="metadata" class="w-full min-w-[12rem] max-w-full">{{ __('Your browser does not support audio.') }}</audio>
+                    </div>
                     @if (filled($m->body) && ! str_starts_with((string) $m->body, '['))
                         <p class="mt-2 whitespace-pre-wrap">{{ $m->body }}</p>
                     @endif

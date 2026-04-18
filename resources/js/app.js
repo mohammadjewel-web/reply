@@ -6,12 +6,6 @@ import { initNotifications } from './notifications';
 
 window.Alpine = Alpine;
 
-const CHAT_EMOJIS = [
-    '😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊', '😇', '🙂', '😉', '😍', '🥰', '😘', '😋', '😛', '😜', '🤪',
-    '😎', '🤩', '🥳', '😏', '😌', '😢', '😭', '😤', '😠', '🤝', '👍', '👎', '👏', '🙏', '🔥', '✨', '❤️', '💯', '✅',
-    '⭐', '🎉', '🙌', '💬', '📷', '🎤', '🎵', '☀️', '🌙', '⚡', '📎',
-];
-
 document.addEventListener('alpine:init', () => {
     Alpine.store('layout', {
         sidebarOpen: false,
@@ -26,7 +20,6 @@ document.addEventListener('alpine:init', () => {
         recording: false,
         pendingVoiceBlob: null,
         hasPendingFile: false,
-        chatEmojis: CHAT_EMOJIS,
         _mediaRecorder: null,
         _recordStream: null,
         listClickBound: null,
@@ -35,12 +28,49 @@ document.addEventListener('alpine:init', () => {
             inboxScrollToEnd();
             this.syncReplyErrorDom(this.replyError);
             this.$watch('replyError', (val) => this.syncReplyErrorDom(val));
+            this.syncComposerUi();
+            this.$watch('emojiOpen', () => this.syncComposerUi());
+            this.$watch('pendingVoiceBlob', () => this.syncComposerUi());
+            this.$watch('hasPendingFile', () => this.syncComposerUi());
+            this.$watch('recording', () => this.syncComposerUi());
             this.listClickBound = (e) => {
                 if (e.target.closest('a.js-inbox-thread-link')) {
                     this.mobileListOpen = false;
                 }
             };
             this.$el.addEventListener('click', this.listClickBound);
+        },
+        syncComposerUi() {
+            this.syncEmojiPanelDom();
+            this.syncAttachmentHintDom();
+            this.syncRecordingBtnDom();
+        },
+        syncEmojiPanelDom() {
+            const el = this.$el?.querySelector?.('[data-inbox-emoji-panel]');
+            if (!el) {
+                return;
+            }
+            el.classList.toggle('hidden', !this.emojiOpen);
+        },
+        syncAttachmentHintDom() {
+            const el = this.$el?.querySelector?.('[data-inbox-attachment-hint]');
+            if (!el) {
+                return;
+            }
+            const show = !!(this.pendingVoiceBlob || this.hasPendingFile);
+            el.classList.toggle('hidden', !show);
+        },
+        syncRecordingBtnDom() {
+            const btn = this.$el?.querySelector?.('[data-inbox-voice-btn]');
+            if (!btn) {
+                return;
+            }
+            const on = !!this.recording;
+            btn.classList.toggle('bg-rose-100', on);
+            btn.classList.toggle('text-rose-700', on);
+            btn.classList.toggle('ring-2', on);
+            btn.classList.toggle('ring-rose-400', on);
+            btn.classList.toggle('text-slate-600', !on);
         },
         syncReplyErrorDom(val) {
             const el = this.$el?.querySelector?.('[data-inbox-reply-error]');
@@ -66,9 +96,10 @@ document.addEventListener('alpine:init', () => {
         },
         toggleEmoji() {
             this.emojiOpen = !this.emojiOpen;
+            this.syncComposerUi();
         },
         insertEmoji(ch) {
-            const ta = this.$refs.chatBody;
+            const ta = this.$refs.chatBody ?? document.getElementById('chat-body');
             if (!ta) {
                 return;
             }
@@ -106,6 +137,7 @@ document.addEventListener('alpine:init', () => {
             }
             this.hasPendingFile = false;
             this.pendingVoiceBlob = null;
+            this.syncComposerUi();
         },
         stopMicTracks() {
             if (this._recordStream) {
@@ -276,6 +308,9 @@ function initInboxActionDelegation() {
             if (ch && typeof d.insertEmoji === 'function') {
                 d.insertEmoji(ch);
                 d.emojiOpen = false;
+                if (typeof d.syncComposerUi === 'function') {
+                    d.syncComposerUi();
+                }
             }
             return;
         }
@@ -293,6 +328,9 @@ function initInboxActionDelegation() {
         const d = inboxRootData(t);
         if (d) {
             d.hasPendingFile = !!(t.files && t.files.length > 0);
+            if (typeof d.syncComposerUi === 'function') {
+                d.syncComposerUi();
+            }
         }
     });
 

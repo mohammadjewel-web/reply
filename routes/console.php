@@ -115,16 +115,24 @@ Artisan::command('baileys:verify {--dotenv= : Absolute path to baileys-service/.
 
         $this->info('OK — running Node accepted the same secret Laravel uses for HTTP calls.');
 
+        /** 1×1 PNG — Guzzle rejects attach('file', '', …) (“A 'contents' key is required”). */
+        $probePng = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true);
+        if ($probePng === false) {
+            $this->error('Internal error: probe PNG decode failed.');
+
+            return Command::FAILURE;
+        }
+
         $sm = Http::timeout(15)
             ->withHeaders(['X-Baileys-Secret' => $secret])
-            ->attach('file', '', 'probe.png', ['Content-Type' => 'image/png'])
+            ->attach('file', $probePng, 'probe.png', ['Content-Type' => 'image/png'])
             ->post($base.'/session/send-media', [
                 'sessionKey' => 'verify-probe',
                 'to' => '12345678901',
                 'mediaType' => 'image',
             ]);
 
-        $this->line('POST /session/send-media (empty file probe) → HTTP '.$sm->status());
+        $this->line('POST /session/send-media (minimal PNG probe) → HTTP '.$sm->status());
         $smBody = $sm->body();
         if (str_contains($smBody, 'Cannot POST /session/send-media')) {
             $this->error('send-media route missing on the Node process Laravel is calling. Restart Node after deploying baileys-service (see npm start → server.mjs).');
@@ -137,7 +145,7 @@ Artisan::command('baileys:verify {--dotenv= : Absolute path to baileys-service/.
             return Command::FAILURE;
         }
         if ($sm->successful()) {
-            $this->warn('Unexpected 200 from send-media probe (expected 400 for empty file).');
+            $this->warn('Unexpected 200 from send-media probe (expected 409/500 for dummy session).');
 
             return Command::SUCCESS;
         }

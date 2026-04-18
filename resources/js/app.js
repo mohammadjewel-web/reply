@@ -33,12 +33,23 @@ document.addEventListener('alpine:init', () => {
         /** Do not name this `init` — Alpine reserves `init` and behavior differs from x-init. */
         inboxStart() {
             inboxScrollToEnd();
+            this.syncReplyErrorDom(this.replyError);
+            this.$watch('replyError', (val) => this.syncReplyErrorDom(val));
             this.listClickBound = (e) => {
                 if (e.target.closest('a.js-inbox-thread-link')) {
                     this.mobileListOpen = false;
                 }
             };
             this.$el.addEventListener('click', this.listClickBound);
+        },
+        syncReplyErrorDom(val) {
+            const el = this.$el?.querySelector?.('[data-inbox-reply-error]');
+            if (!el) {
+                return;
+            }
+            const msg = val ?? '';
+            el.textContent = msg;
+            el.classList.toggle('hidden', msg === '');
         },
         destroy() {
             this.stopMicTracks();

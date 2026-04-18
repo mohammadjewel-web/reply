@@ -20,8 +20,25 @@ use App\Http\Controllers\WhatsappOAuthController;
 use App\Http\Controllers\WhatsappPairStatusController;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 
 Route::redirect('/', '/login');
+
+/**
+ * Public disk files via Laravel (works without `public/storage` symlink). Laravel reserves
+ * GET /storage/{path} for storage.local in some setups, so we use a dedicated path.
+ */
+Route::get('/disk/public/{path}', function (string $path) {
+    $normalized = str_replace('\\', '/', $path);
+    if ($normalized === '' || str_contains($normalized, '..')) {
+        abort(404);
+    }
+    if (! Storage::disk('public')->exists($normalized)) {
+        abort(404);
+    }
+
+    return Storage::disk('public')->response($normalized);
+})->where('path', '.*')->name('storage.public_file');
 
 Route::prefix('webhooks')
     ->withoutMiddleware([VerifyCsrfToken::class])

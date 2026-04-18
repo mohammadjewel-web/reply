@@ -392,7 +392,8 @@
                                         {{ __('This chat is not linked to an active connection. You can read the history; add a connection again to send messages.') }}
                                     </div>
                                 @endif
-                                <p x-show="replyError" x-cloak class="mt-2 text-center text-sm text-red-600" x-text="replyError"></p>
+                                {{-- Avoid x-show/x-text on replyError: nested Alpine scopes can evaluate this against the layout and throw ReferenceError on other pages if DOM is reused. Synced from inboxPage via $watch. --}}
+                                <p data-inbox-reply-error class="mt-2 hidden text-center text-sm text-red-600" role="alert"></p>
                                 <x-input-error :messages="$errors->get('body')" class="mt-2 text-center" />
                                 <x-input-error :messages="$errors->get('attachment')" class="mt-2 text-center" />
                                 <x-input-error :messages="$errors->get('assigned_to_user_id')" class="mt-2 text-center" />

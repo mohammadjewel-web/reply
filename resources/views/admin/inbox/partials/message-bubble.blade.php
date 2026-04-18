@@ -12,7 +12,9 @@
     $om = is_array($m->payload) ? ($m->payload['outbound_media'] ?? null) : null;
     $mediaPath = is_array($om) && ! empty($om['path']) ? $om['path'] : null;
     $mediaKind = is_array($om) ? ($om['kind'] ?? '') : '';
-    $mediaUrl = $mediaPath ? \Illuminate\Support\Facades\Storage::disk('public')->url($mediaPath) : null;
+    $mediaUrl = $mediaPath
+        ? route('storage.public_file', ['path' => ltrim(str_replace('\\', '/', $mediaPath), '/')], absolute: false)
+        : null;
 @endphp
 <div class="flex w-full {{ $isOutbound ? 'justify-end' : 'justify-start' }}" data-message-id="{{ $m->id }}">
     <div class="flex max-w-[min(100%,28rem)] {{ $isOutbound ? 'flex-row-reverse' : 'flex-row' }} items-end gap-2">

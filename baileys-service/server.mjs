@@ -57,7 +57,7 @@ const SECRET =
     : 'change-me';
 const AUTH_ROOT = path.join(__dirname, 'auth');
 /** Bump when deploy instructions change — curl /health to confirm the running process picked up new code. */
-const SERVICE_REV = 7;
+const SERVICE_REV = 8;
 
 if (!fs.existsSync(AUTH_ROOT)) {
   fs.mkdirSync(AUTH_ROOT, { recursive: true });
@@ -489,23 +489,34 @@ app.post('/session/reset', authMiddleware, async (req, res) => {
 app.post('/session/send', authMiddleware, async (req, res) => {
   const sessionKey = String(req.body.sessionKey || '');
   const toRaw = String(req.body.to || '');
+  const jidOverride = String(req.body.jid || '').trim();
   const text = String(req.body.text ?? '');
   const to = toRaw.replace(/\D/g, '');
-  if (!sanitizeKey(sessionKey) || to.length < 8 || text.length === 0) {
+  if (!sanitizeKey(sessionKey) || text.length === 0) {
     return res.status(400).json({
       ok: false,
-      error: 'sessionKey, to (phone digits), and text required',
+      error: 'sessionKey and text required; provide jid or to (phone digits)',
     });
   }
   if (text.length > 4096) {
     return res.status(400).json({ ok: false, error: 'text too long' });
+  }
+  let jid;
+  if (jidOverride.includes('@')) {
+    jid = jidOverride;
+  } else if (to.length >= 8) {
+    jid = `${to}@s.whatsapp.net`;
+  } else {
+    return res.status(400).json({
+      ok: false,
+      error: 'Provide full jid (from Baileys inbound) or to with at least 8 digits',
+    });
   }
   const k = sanitizeKey(sessionKey);
   const slot = sessions.get(k);
   if (!slot?.sock || slot.status !== 'connected') {
     return res.status(409).json({ ok: false, error: 'Session not connected' });
   }
-  const jid = `${to}@s.whatsapp.net`;
   try {
     const sent = await slot.sock.sendMessage(jid, { text });
     const messageId = sent?.key?.id ?? null;

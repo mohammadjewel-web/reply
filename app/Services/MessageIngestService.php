@@ -21,6 +21,7 @@ class MessageIngestService
         ?string $externalMessageId,
         ?array $payload,
         ?Carbon $sentAt = null,
+        ?string $baileysRemoteJid = null,
     ): ChannelMessage {
         $platform = $account->type === ChannelAccount::TYPE_WHATSAPP
             ? Conversation::PLATFORM_WHATSAPP
@@ -42,12 +43,16 @@ class MessageIngestService
             $conversation->update(['display_name' => $displayName]);
         }
 
+        $this->syncBaileysRemoteJid($conversation, $baileysRemoteJid);
+
         if ($externalMessageId) {
             $existing = ChannelMessage::query()
                 ->where('conversation_id', $conversation->id)
                 ->where('external_message_id', $externalMessageId)
                 ->first();
             if ($existing) {
+                $this->syncBaileysRemoteJid($existing->conversation, $baileysRemoteJid);
+
                 return $existing;
             }
         }
@@ -68,5 +73,22 @@ class MessageIngestService
         $this->inboundNotifier->notify($message);
 
         return $message;
+    }
+
+    private function syncBaileysRemoteJid(Conversation $conversation, ?string $remoteJid): void
+    {
+        $remoteJid = $remoteJid !== null ? trim($remoteJid) : '';
+        if ($remoteJid === '' || ! str_contains($remoteJid, '@')) {
+            return;
+        }
+        if ($conversation->platform !== Conversation::PLATFORM_WHATSAPP) {
+            return;
+        }
+        $meta = $conversation->metadata ?? [];
+        if (($meta['baileys_remote_jid'] ?? null) === $remoteJid) {
+            return;
+        }
+        $meta['baileys_remote_jid'] = $remoteJid;
+        $conversation->update(['metadata' => $meta]);
     }
 }

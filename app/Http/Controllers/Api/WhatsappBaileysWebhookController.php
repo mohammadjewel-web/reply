@@ -79,6 +79,7 @@ class WhatsappBaileysWebhookController extends Controller
             $data['external_message_id'] ?? null,
             $data['payload'] ?? null,
             $sentAt,
+            trim($data['from']),
         );
 
         return response('OK', 200);

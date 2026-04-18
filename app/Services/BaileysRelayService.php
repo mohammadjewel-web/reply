@@ -11,11 +11,15 @@ class BaileysRelayService
     /**
      * @return array{ok: bool, message_id: ?string, error: ?string}
      */
+    /**
+     * @param  string|null  $remoteJid  Full WhatsApp JID from inbound (e.g. …@s.whatsapp.net or …@lid). Required for some chats.
+     */
     public function sendTextMessage(
         ChannelAccount $account,
         string $sessionKey,
         string $toWaDigits,
         string $text,
+        ?string $remoteJid = null,
     ): array {
         if (! config('services.baileys.enabled')) {
             return ['ok' => false, 'message_id' => null, 'error' => 'Baileys is disabled'];
@@ -37,15 +41,21 @@ class BaileysRelayService
             return ['ok' => false, 'message_id' => null, 'error' => 'Invalid recipient number'];
         }
 
+        $remoteJid = $remoteJid !== null ? trim($remoteJid) : '';
+        $body = [
+            'sessionKey' => $sessionKey,
+            'to' => $to,
+            'text' => $text,
+        ];
+        if ($remoteJid !== '' && str_contains($remoteJid, '@')) {
+            $body['jid'] = $remoteJid;
+        }
+
         try {
             $response = Http::timeout(45)
                 ->withHeaders(['X-Baileys-Secret' => $secret])
                 ->acceptJson()
-                ->post($base.'/session/send', [
-                    'sessionKey' => $sessionKey,
-                    'to' => $to,
-                    'text' => $text,
-                ]);
+                ->post($base.'/session/send', $body);
         } catch (Throwable $e) {
             return ['ok' => false, 'message_id' => null, 'error' => $e->getMessage()];
         }

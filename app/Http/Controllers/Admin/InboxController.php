@@ -140,11 +140,13 @@ class InboxController extends Controller
 
             if ($useBaileys) {
                 $sessionKey = 'wa-'.$account->id.'-u-'.$sessionUserId;
+                $remoteJid = $this->resolveBaileysRemoteJidForSend($conversation);
                 $result = $baileysRelay->sendTextMessage(
                     $account,
                     $sessionKey,
                     $conversation->external_thread_key,
                     $body,
+                    $remoteJid,
                 );
             } else {
                 $result = $whatsapp->sendTextMessageForChannel($account, $conversation->external_thread_key, $body);
@@ -191,5 +193,33 @@ class InboxController extends Controller
             'assignee' => $request->query('assignee'),
             'account' => $request->query('account'),
         ]);
+    }
+
+    /**
+     * WhatsApp Web often needs the exact inbound JID (@lid, multi-device), not only digits @s.whatsapp.net.
+     */
+    private function resolveBaileysRemoteJidForSend(Conversation $conversation): ?string
+    {
+        $jid = data_get($conversation->metadata, 'baileys_remote_jid');
+        if (is_string($jid) && str_contains($jid, '@')) {
+            return $jid;
+        }
+
+        $lastInbound = ChannelMessage::query()
+            ->where('conversation_id', $conversation->id)
+            ->where('direction', ChannelMessage::DIRECTION_INBOUND)
+            ->orderByDesc('id')
+            ->first();
+
+        $jid = data_get($lastInbound?->payload, 'key.remoteJid');
+        if (! is_string($jid) || ! str_contains($jid, '@')) {
+            return null;
+        }
+
+        $meta = $conversation->metadata ?? [];
+        $meta['baileys_remote_jid'] = $jid;
+        $conversation->update(['metadata' => $meta]);
+
+        return $jid;
     }
 }

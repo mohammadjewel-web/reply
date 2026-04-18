@@ -1,4 +1,5 @@
 import express from 'express';
+import multer from 'multer';
 import makeWASocket, {
   DisconnectReason,
   extractMessageContent,
@@ -57,7 +58,7 @@ const SECRET =
     : 'change-me';
 const AUTH_ROOT = path.join(__dirname, 'auth');
 /** Bump when deploy instructions change — curl /health to confirm the running process picked up new code. */
-const SERVICE_REV = 10;
+const SERVICE_REV = 11;
 
 if (!fs.existsSync(AUTH_ROOT)) {
   fs.mkdirSync(AUTH_ROOT, { recursive: true });
@@ -65,6 +66,11 @@ if (!fs.existsSync(AUTH_ROOT)) {
 
 const app = express();
 app.use(express.json({ limit: '32kb' }));
+
+const uploadMedia = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
 
 function sanitizeKey(key) {
   return String(key || '')
@@ -460,6 +466,7 @@ app.get('/', (req, res) => {
     <li><code>POST /session/reset</code> — body <code>{"sessionKey":"…"}</code>, clears saved auth for that key</li>
     <li><code>POST /session/ping</code> — no body; checks <code>X-Baileys-Secret</code></li>
     <li><code>POST /session/send</code> — body <code>{"sessionKey","to","text"}</code> (<code>to</code> = phone digits)</li>
+    <li><code>POST /session/send-media</code> — multipart <code>file</code> + fields <code>sessionKey</code>, <code>to</code> or <code>jid</code>, <code>mediaType</code> (<code>image</code>|<code>video</code>|<code>audio</code>|<code>ptt</code>), optional <code>caption</code></li>
     <li><code>GET /session/:key/status</code> — poll QR / status (requires <code>X-Baileys-Secret</code>)</li>
   </ul>
   <p>Use <strong>/whatsapp/connect</strong> in your Laravel app to generate the QR.</p>
@@ -547,6 +554,78 @@ app.post('/session/send', authMiddleware, async (req, res) => {
     });
   }
 });
+
+app.post(
+  '/session/send-media',
+  authMiddleware,
+  uploadMedia.single('file'),
+  async (req, res) => {
+    const sessionKey = String(req.body.sessionKey || '');
+    const toRaw = String(req.body.to || '');
+    const jidOverride = String(req.body.jid || '').trim();
+    const mediaType = String(req.body.mediaType || 'image').toLowerCase();
+    const caption = String(req.body.caption ?? '').slice(0, 1024);
+    const file = req.file;
+    if (!sanitizeKey(sessionKey) || !file?.buffer?.length) {
+      return res.status(400).json({
+        ok: false,
+        error: 'sessionKey and file required; provide jid or to (phone digits)',
+      });
+    }
+    const allowed = new Set(['image', 'video', 'audio', 'ptt']);
+    if (!allowed.has(mediaType)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'mediaType must be image, video, audio, or ptt',
+      });
+    }
+    const to = toRaw.replace(/\D/g, '');
+    let jid;
+    if (jidOverride.includes('@')) {
+      jid = jidOverride;
+    } else if (to.length >= 8) {
+      jid = `${to}@s.whatsapp.net`;
+    } else {
+      return res.status(400).json({
+        ok: false,
+        error: 'Provide full jid (from Baileys inbound) or to with at least 8 digits',
+      });
+    }
+    const k = sanitizeKey(sessionKey);
+    const slot = sessions.get(k);
+    if (!slot?.sock || slot.status !== 'connected') {
+      return res.status(409).json({ ok: false, error: 'Session not connected' });
+    }
+    /** @type {Record<string, unknown>} */
+    const content = {};
+    if (mediaType === 'image') {
+      content.image = file.buffer;
+      if (caption.length) {
+        content.caption = caption;
+      }
+    } else if (mediaType === 'video') {
+      content.video = file.buffer;
+      if (caption.length) {
+        content.caption = caption;
+      }
+    } else if (mediaType === 'ptt') {
+      content.audio = file.buffer;
+      content.ptt = true;
+    } else {
+      content.audio = file.buffer;
+    }
+    try {
+      const sent = await slot.sock.sendMessage(jid, content);
+      const messageId = sent?.key?.id ?? null;
+      return res.json({ ok: true, messageId });
+    } catch (e) {
+      return res.status(500).json({
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  },
+);
 
 app.post('/session/start', authMiddleware, async (req, res) => {
   const sessionKey = String(req.body.sessionKey || '');

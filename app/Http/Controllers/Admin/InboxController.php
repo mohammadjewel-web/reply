@@ -13,7 +13,9 @@ use App\Services\WhatsappCloudService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
+use Illuminate\Validation\ValidationException;
 
 class InboxController extends Controller
 {
@@ -227,12 +229,23 @@ class InboxController extends Controller
         BaileysRelayService $baileysRelay,
     ): RedirectResponse|JsonResponse {
         $validated = $request->validate([
-            'body' => ['required', 'string', 'max:4096'],
+            'body' => ['nullable', 'string', 'max:4096'],
+            'attachment' => ['nullable', 'file', 'max:25600'],
+            'voice_note' => ['sometimes', 'boolean'],
         ]);
+
+        $bodyTrim = trim((string) ($validated['body'] ?? ''));
+        $file = $request->file('attachment');
+        $voiceNote = $request->boolean('voice_note');
+
+        if ($file === null && $bodyTrim === '') {
+            throw ValidationException::withMessages([
+                'body' => [__('Type a message, pick an emoji, or attach a photo, video, or voice note.')],
+            ]);
+        }
 
         /** @var User $user */
         $user = $request->user();
-        $body = $validated['body'];
         $sentAt = now();
         $wantsJson = $request->ajax() || $request->wantsJson();
 
@@ -246,12 +259,130 @@ class InboxController extends Controller
             return back()->withErrors(['body' => $msg])->withInput();
         }
 
+        $disk = Storage::disk('public');
+        $storedPath = null;
         $message = null;
 
-        if ($conversation->platform === Conversation::PLATFORM_WHATSAPP) {
-            // Only treat Cloud API as available when *this connection* has token + phone id.
-            // Global WHATSAPP_* .env placeholders must not force Cloud sends (invalid token → "Unauthorized")
-            // when the inbox is actually using Baileys.
+        if ($file !== null) {
+            $mimeRaw = $file->getMimeType() ?: 'application/octet-stream';
+            $origName = $file->getClientOriginalName() ?: 'attachment';
+
+            if ($conversation->platform === Conversation::PLATFORM_WHATSAPP) {
+                $waKind = $this->outboundWhatsappMediaKind($mimeRaw);
+                if ($waKind === null) {
+                    return $this->replySendError(
+                        __('This file type is not supported for WhatsApp.'),
+                        $wantsJson,
+                    );
+                }
+                $storedPath = $file->store('chat-outbound/'.$conversation->id, 'public');
+                $absolutePath = $disk->path($storedPath);
+                $caption = $bodyTrim !== '' ? $bodyTrim : null;
+                $displayBody = $caption ?? $this->outboundMediaPlaceholder($waKind);
+
+                $perAccountCloud = filled($account->access_token) && filled($account->external_id);
+                $sessionUserId = $account->baileys_session_user_id ?? $user->id;
+                $useBaileys = config('services.baileys.enabled')
+                    && ($account->baileys_session_user_id !== null || ! $perAccountCloud);
+
+                if ($useBaileys) {
+                    $sessionKey = 'wa-'.$account->id.'-u-'.$sessionUserId;
+                    $remoteJid = $this->resolveBaileysRemoteJidForSend($conversation);
+                    $baileysType = ($waKind === 'audio' && $voiceNote) ? 'ptt' : $waKind;
+                    $result = $baileysRelay->sendMediaMessage(
+                        $account,
+                        $sessionKey,
+                        $conversation->external_thread_key,
+                        $absolutePath,
+                        $origName,
+                        $mimeRaw,
+                        $baileysType,
+                        $remoteJid,
+                        $caption,
+                    );
+                } else {
+                    $up = $whatsapp->uploadMediaForChannel($account, $absolutePath, $mimeRaw);
+                    if (! $up['ok']) {
+                        $disk->delete($storedPath);
+                        $err = $up['error'] ?? 'Upload failed';
+
+                        return $this->replySendError($err, $wantsJson);
+                    }
+                    $result = $whatsapp->sendMediaMessageForChannel(
+                        $account,
+                        $conversation->external_thread_key,
+                        $waKind,
+                        (string) $up['media_id'],
+                        $caption,
+                    );
+                }
+
+                if (! $result['ok']) {
+                    $disk->delete($storedPath);
+                    $err = $result['error'] ?? 'WhatsApp send failed';
+
+                    return $this->replySendError($err, $wantsJson);
+                }
+
+                $message = ChannelMessage::query()->create([
+                    'conversation_id' => $conversation->id,
+                    'direction' => ChannelMessage::DIRECTION_OUTBOUND,
+                    'external_message_id' => $result['message_id'],
+                    'body' => $displayBody,
+                    'payload' => [
+                        'via' => $useBaileys ? 'baileys' : 'whatsapp_cloud',
+                        'outbound_media' => [
+                            'kind' => $waKind,
+                            'path' => $storedPath,
+                            'mime' => $mimeRaw,
+                            'original_name' => $origName,
+                        ],
+                    ],
+                    'sent_at' => $sentAt,
+                    'user_id' => $user->id,
+                ]);
+            } elseif ($conversation->platform === Conversation::PLATFORM_MESSENGER) {
+                $msKind = $this->outboundMessengerAttachmentType($mimeRaw);
+                $storedPath = $file->store('chat-outbound/'.$conversation->id, 'public');
+                $absolutePath = $disk->path($storedPath);
+                $caption = $bodyTrim !== '' ? $bodyTrim : null;
+                $displayBody = $caption ?? $this->outboundMediaPlaceholder($msKind === 'file' ? 'file' : $msKind);
+
+                $result = $messenger->sendAttachmentForChannel(
+                    $account,
+                    $conversation->external_thread_key,
+                    $msKind,
+                    $absolutePath,
+                    $origName,
+                );
+
+                if (! $result['ok']) {
+                    $disk->delete($storedPath);
+                    $err = $result['error'] ?? 'Messenger send failed';
+
+                    return $this->replySendError($err, $wantsJson);
+                }
+
+                $message = ChannelMessage::query()->create([
+                    'conversation_id' => $conversation->id,
+                    'direction' => ChannelMessage::DIRECTION_OUTBOUND,
+                    'external_message_id' => $result['message_id'],
+                    'body' => $displayBody,
+                    'payload' => [
+                        'outbound_media' => [
+                            'kind' => $msKind,
+                            'path' => $storedPath,
+                            'mime' => $mimeRaw,
+                            'original_name' => $origName,
+                        ],
+                    ],
+                    'sent_at' => $sentAt,
+                    'user_id' => $user->id,
+                ]);
+            } else {
+                return $this->replySendError('Unknown platform', $wantsJson);
+            }
+        } elseif ($conversation->platform === Conversation::PLATFORM_WHATSAPP) {
             $perAccountCloud = filled($account->access_token) && filled($account->external_id);
             $sessionUserId = $account->baileys_session_user_id ?? $user->id;
             $useBaileys = config('services.baileys.enabled')
@@ -264,56 +395,45 @@ class InboxController extends Controller
                     $account,
                     $sessionKey,
                     $conversation->external_thread_key,
-                    $body,
+                    $bodyTrim,
                     $remoteJid,
                 );
             } else {
-                $result = $whatsapp->sendTextMessageForChannel($account, $conversation->external_thread_key, $body);
+                $result = $whatsapp->sendTextMessageForChannel($account, $conversation->external_thread_key, $bodyTrim);
             }
 
             if (! $result['ok']) {
                 $err = $result['error'] ?? 'WhatsApp send failed';
-                if ($wantsJson) {
-                    return response()->json(['message' => $err, 'errors' => ['body' => [$err]]], 422);
-                }
 
-                return back()->withErrors(['body' => $err])->withInput();
+                return $this->replySendError($err, $wantsJson);
             }
             $message = ChannelMessage::query()->create([
                 'conversation_id' => $conversation->id,
                 'direction' => ChannelMessage::DIRECTION_OUTBOUND,
                 'external_message_id' => $result['message_id'],
-                'body' => $body,
+                'body' => $bodyTrim,
                 'payload' => $useBaileys ? ['via' => 'baileys'] : null,
                 'sent_at' => $sentAt,
                 'user_id' => $user->id,
             ]);
         } elseif ($conversation->platform === Conversation::PLATFORM_MESSENGER) {
-            $result = $messenger->sendTextMessageForChannel($account, $conversation->external_thread_key, $body);
+            $result = $messenger->sendTextMessageForChannel($account, $conversation->external_thread_key, $bodyTrim);
             if (! $result['ok']) {
                 $err = $result['error'] ?? 'Messenger send failed';
-                if ($wantsJson) {
-                    return response()->json(['message' => $err, 'errors' => ['body' => [$err]]], 422);
-                }
 
-                return back()->withErrors(['body' => $err])->withInput();
+                return $this->replySendError($err, $wantsJson);
             }
             $message = ChannelMessage::query()->create([
                 'conversation_id' => $conversation->id,
                 'direction' => ChannelMessage::DIRECTION_OUTBOUND,
                 'external_message_id' => $result['message_id'],
-                'body' => $body,
+                'body' => $bodyTrim,
                 'payload' => null,
                 'sent_at' => $sentAt,
                 'user_id' => $user->id,
             ]);
         } else {
-            $err = 'Unknown platform';
-            if ($wantsJson) {
-                return response()->json(['message' => $err, 'errors' => ['body' => [$err]]], 422);
-            }
-
-            return back()->withErrors(['body' => $err])->withInput();
+            return $this->replySendError('Unknown platform', $wantsJson);
         }
 
         $updates = ['last_message_at' => $sentAt];
@@ -358,6 +478,59 @@ class InboxController extends Controller
             'assignee' => $request->query('assignee'),
             'account' => $request->query('account'),
         ]);
+    }
+
+    private function replySendError(string $err, bool $wantsJson): RedirectResponse|JsonResponse
+    {
+        if ($wantsJson) {
+            return response()->json(['message' => $err, 'errors' => ['body' => [$err]]], 422);
+        }
+
+        return back()->withErrors(['body' => $err])->withInput();
+    }
+
+    private function outboundWhatsappMediaKind(string $mime): ?string
+    {
+        if (str_starts_with($mime, 'image/')) {
+            return 'image';
+        }
+        if (str_starts_with($mime, 'video/')) {
+            return 'video';
+        }
+        if (str_starts_with($mime, 'audio/')) {
+            return 'audio';
+        }
+
+        return null;
+    }
+
+    /**
+     * @return string image|video|audio|file
+     */
+    private function outboundMessengerAttachmentType(string $mime): string
+    {
+        if (str_starts_with($mime, 'image/')) {
+            return 'image';
+        }
+        if (str_starts_with($mime, 'video/')) {
+            return 'video';
+        }
+        if (str_starts_with($mime, 'audio/')) {
+            return 'audio';
+        }
+
+        return 'file';
+    }
+
+    private function outboundMediaPlaceholder(string $kind): string
+    {
+        return match ($kind) {
+            'image' => '['.__('Photo').']',
+            'video' => '['.__('Video').']',
+            'audio', 'ptt' => '['.__('Voice message').']',
+            'file' => '['.__('File').']',
+            default => '['.__('Attachment').']',
+        };
     }
 
     /**

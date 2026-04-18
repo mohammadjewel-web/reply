@@ -289,31 +289,93 @@
 
                             <div class="z-10 shrink-0 border-t border-slate-200/80 bg-[#f0f0f0] px-3 py-3 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] sm:px-4">
                                 @if ($canReply)
-                                    <form method="post" action="{{ $replyAction }}" class="flex items-end gap-2" @submit="sendReply($event)">
+                                    <form method="post" action="{{ $replyAction }}" enctype="multipart/form-data" class="flex flex-col gap-2" @submit="sendReply($event)">
                                         @csrf
-                                        <label for="chat-body" class="sr-only">{{ __('Message') }}</label>
-                                        <div class="min-w-0 flex-1 rounded-3xl border border-slate-200 bg-white shadow-inner transition-shadow focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/30">
-                                            <textarea
-                                                id="chat-body"
-                                                name="body"
-                                                rows="1"
-                                                required
-                                                class="block max-h-32 w-full resize-none rounded-3xl border-0 bg-transparent px-4 py-3 text-[15px] text-slate-900 placeholder:text-slate-400 focus:ring-0"
-                                                placeholder="{{ $active->platform === 'whatsapp' ? __('Message') : __('Aa') }}…"
-                                                @input="$el.style.height = 'auto'; $el.style.height = Math.min($el.scrollHeight, 128) + 'px'"
-                                            >{{ old('body') }}</textarea>
-                                        </div>
-                                        <button
-                                            type="submit"
-                                            class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-white shadow-md transition-transform active:scale-95 disabled:opacity-50
-                                                {{ $active->platform === 'whatsapp' ? 'bg-[#25d366] hover:bg-[#20bd5a]' : 'bg-[#0084ff] hover:bg-[#0073e6]' }}"
-                                            title="{{ __('Send') }}"
+                                        <input type="file" name="attachment" x-ref="fileAttachment" class="hidden" accept="image/*,video/*,audio/*" />
+
+                                        <div
+                                            x-show="emojiOpen"
+                                            x-cloak
+                                            x-transition
+                                            class="max-h-36 overflow-y-auto rounded-2xl border border-slate-200 bg-white px-2 py-2 shadow-inner"
                                         >
-                                            <svg class="-ms-0.5 h-6 w-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                                            </svg>
-                                            <span class="sr-only">{{ __('Send') }}</span>
-                                        </button>
+                                            <div class="flex flex-wrap gap-1">
+                                                <template x-for="em in chatEmojis" :key="em">
+                                                    <button
+                                                        type="button"
+                                                        class="flex h-9 w-9 items-center justify-center rounded-lg text-xl hover:bg-slate-100"
+                                                        x-text="em"
+                                                        @click="insertEmoji(em); emojiOpen = false"
+                                                    ></button>
+                                                </template>
+                                            </div>
+                                        </div>
+
+                                        <div class="flex items-end gap-2">
+                                            <div class="flex min-w-0 flex-1 flex-col gap-1">
+                                                <div class="flex flex-wrap items-center gap-0.5 px-0.5">
+                                                    <button
+                                                        type="button"
+                                                        class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-200/80"
+                                                        @click="toggleEmoji()"
+                                                        title="{{ __('Emoji') }}"
+                                                    >
+                                                        <span class="text-lg leading-none">😊</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-200/80"
+                                                        @click="pickPhoto()"
+                                                        title="{{ __('Photo') }}"
+                                                    >
+                                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-200/80"
+                                                        @click="pickVideo()"
+                                                        title="{{ __('Video') }}"
+                                                    >
+                                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        class="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-200/80"
+                                                        :class="recording ? 'bg-rose-100 text-rose-700 ring-2 ring-rose-400' : 'text-slate-600'"
+                                                        @click="toggleVoiceRecord()"
+                                                        title="{{ __('Voice message') }}"
+                                                    >
+                                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
+                                                    </button>
+                                                    <span x-show="pendingVoiceBlob || ($refs.fileAttachment && $refs.fileAttachment.files.length)" x-cloak class="ms-1 text-[11px] text-slate-500">
+                                                        <button type="button" class="font-medium text-emerald-700 underline" @click="clearAttachment()">{{ __('Clear attachment') }}</button>
+                                                    </span>
+                                                </div>
+                                                <label for="chat-body" class="sr-only">{{ __('Message') }}</label>
+                                                <div class="rounded-3xl border border-slate-200 bg-white shadow-inner transition-shadow focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/30">
+                                                    <textarea
+                                                        id="chat-body"
+                                                        name="body"
+                                                        x-ref="chatBody"
+                                                        rows="1"
+                                                        class="block max-h-32 w-full resize-none rounded-3xl border-0 bg-transparent px-4 py-3 text-[15px] text-slate-900 placeholder:text-slate-400 focus:ring-0"
+                                                        placeholder="{{ $active->platform === 'whatsapp' ? __('Message') : __('Aa') }}…"
+                                                        @input="$el.style.height = 'auto'; $el.style.height = Math.min($el.scrollHeight, 128) + 'px'"
+                                                    >{{ old('body') }}</textarea>
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="submit"
+                                                class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-white shadow-md transition-transform active:scale-95 disabled:opacity-50
+                                                    {{ $active->platform === 'whatsapp' ? 'bg-[#25d366] hover:bg-[#20bd5a]' : 'bg-[#0084ff] hover:bg-[#0073e6]' }}"
+                                                title="{{ __('Send') }}"
+                                            >
+                                                <svg class="-ms-0.5 h-6 w-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                                                </svg>
+                                                <span class="sr-only">{{ __('Send') }}</span>
+                                            </button>
+                                        </div>
                                     </form>
                                 @else
                                     <div class="rounded-2xl border border-slate-200/90 bg-white/95 px-4 py-3 text-center text-sm text-slate-600 shadow-sm">
@@ -322,6 +384,7 @@
                                 @endif
                                 <p x-show="replyError" x-cloak class="mt-2 text-center text-sm text-red-600" x-text="replyError"></p>
                                 <x-input-error :messages="$errors->get('body')" class="mt-2 text-center" />
+                                <x-input-error :messages="$errors->get('attachment')" class="mt-2 text-center" />
                                 <x-input-error :messages="$errors->get('assigned_to_user_id')" class="mt-2 text-center" />
                             </div>
                         </div>

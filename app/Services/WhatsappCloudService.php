@@ -125,6 +125,95 @@ class WhatsappCloudService
         return ['ok' => true, 'message_id' => $id ? (string) $id : null, 'error' => null];
     }
 
+    /**
+     * Upload binary media to WhatsApp Cloud; returns Graph media id.
+     *
+     * @return array{ok: bool, media_id: ?string, error: ?string}
+     */
+    public function uploadMediaForChannel(ChannelAccount $account, string $absolutePath, string $mime): array
+    {
+        $token = $this->accessTokenForChannel($account);
+        $phoneId = $this->phoneNumberIdForChannel($account);
+        if (! $token || ! $phoneId) {
+            return ['ok' => false, 'media_id' => null, 'error' => 'Missing WhatsApp token or phone_number_id for this connection'];
+        }
+
+        $version = config('services.whatsapp.graph_version', 'v21.0');
+        $url = "https://graph.facebook.com/{$version}/{$phoneId}/media";
+
+        $response = Http::withToken($token)
+            ->timeout(120)
+            ->attach('file', file_get_contents($absolutePath), basename($absolutePath), ['Content-Type' => $mime])
+            ->post($url, ['messaging_product' => 'whatsapp']);
+
+        if (! $response->successful()) {
+            Log::error('WhatsApp media upload failed', ['body' => $response->body()]);
+
+            return ['ok' => false, 'media_id' => null, 'error' => $response->body()];
+        }
+
+        $mid = $response->json('id');
+
+        return ['ok' => true, 'media_id' => $mid ? (string) $mid : null, 'error' => null];
+    }
+
+    /**
+     * @param  string  $waType  image|video|audio
+     * @return array{ok: bool, message_id: ?string, error: ?string}
+     */
+    public function sendMediaMessageForChannel(
+        ChannelAccount $account,
+        string $toWaId,
+        string $waType,
+        string $mediaId,
+        ?string $caption,
+    ): array {
+        $token = $this->accessTokenForChannel($account);
+        $phoneId = $this->phoneNumberIdForChannel($account);
+        if (! $token || ! $phoneId) {
+            return ['ok' => false, 'message_id' => null, 'error' => 'Missing WhatsApp token or phone_number_id for this connection'];
+        }
+
+        $version = config('services.whatsapp.graph_version', 'v21.0');
+        $url = "https://graph.facebook.com/{$version}/{$phoneId}/messages";
+
+        $payload = [
+            'messaging_product' => 'whatsapp',
+            'to' => $toWaId,
+        ];
+
+        if ($waType === 'image') {
+            $payload['type'] = 'image';
+            $payload['image'] = array_filter([
+                'id' => $mediaId,
+                'caption' => $caption !== null && $caption !== '' ? $caption : null,
+            ]);
+        } elseif ($waType === 'video') {
+            $payload['type'] = 'video';
+            $payload['video'] = array_filter([
+                'id' => $mediaId,
+                'caption' => $caption !== null && $caption !== '' ? $caption : null,
+            ]);
+        } elseif ($waType === 'audio') {
+            $payload['type'] = 'audio';
+            $payload['audio'] = ['id' => $mediaId];
+        } else {
+            return ['ok' => false, 'message_id' => null, 'error' => 'Unsupported media type'];
+        }
+
+        $response = Http::withToken($token)->timeout(60)->post($url, $payload);
+
+        if (! $response->successful()) {
+            Log::error('WhatsApp media send failed', ['body' => $response->body()]);
+
+            return ['ok' => false, 'message_id' => null, 'error' => $response->body()];
+        }
+
+        $id = $response->json('messages.0.id');
+
+        return ['ok' => true, 'message_id' => $id ? (string) $id : null, 'error' => null];
+    }
+
     public function exchangeOAuthCode(string $code, string $redirectUri): array
     {
         $appId = config('services.facebook.app_id');

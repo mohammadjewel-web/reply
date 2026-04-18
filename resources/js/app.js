@@ -6,12 +6,24 @@ import { initNotifications } from './notifications';
 
 window.Alpine = Alpine;
 
+const CHAT_EMOJIS = [
+    '😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊', '😇', '🙂', '😉', '😍', '🥰', '😘', '😋', '😛', '😜', '🤪',
+    '😎', '🤩', '🥳', '😏', '😌', '😢', '😭', '😤', '😠', '🤝', '👍', '👎', '👏', '🙏', '🔥', '✨', '❤️', '💯', '✅',
+    '⭐', '🎉', '🙌', '💬', '📷', '🎤', '🎵', '☀️', '🌙', '⚡', '📎',
+];
+
 document.addEventListener('alpine:init', () => {
     Alpine.data('inboxPage', (config) => ({
         mobileListOpen: config.mobileListOpen,
         listAssignee: config.listAssignee ?? 'all',
         listAccount: config.listAccount ?? '',
         replyError: '',
+        emojiOpen: false,
+        recording: false,
+        pendingVoiceBlob: null,
+        chatEmojis: CHAT_EMOJIS,
+        _mediaRecorder: null,
+        _recordStream: null,
         listClickBound: null,
         /** Do not name this `init` — Alpine reserves `init` and behavior differs from x-init. */
         inboxStart() {
@@ -24,6 +36,7 @@ document.addEventListener('alpine:init', () => {
             this.$el.addEventListener('click', this.listClickBound);
         },
         destroy() {
+            this.stopMicTracks();
             if (this.listClickBound && this.$el) {
                 this.$el.removeEventListener('click', this.listClickBound);
             }
@@ -31,6 +44,102 @@ document.addEventListener('alpine:init', () => {
         },
         scrollToEnd() {
             inboxScrollToEnd();
+        },
+        toggleEmoji() {
+            this.emojiOpen = !this.emojiOpen;
+        },
+        insertEmoji(ch) {
+            const ta = this.$refs.chatBody;
+            if (!ta) {
+                return;
+            }
+            const s = ta.selectionStart ?? ta.value.length;
+            const e = ta.selectionEnd ?? ta.value.length;
+            ta.value = ta.value.slice(0, s) + ch + ta.value.slice(e);
+            ta.focus();
+            ta.selectionStart = ta.selectionEnd = s + ch.length;
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+        },
+        pickPhoto() {
+            const el = this.$refs.fileAttachment;
+            if (!el) {
+                return;
+            }
+            el.accept = 'image/*';
+            el.value = '';
+            el.click();
+        },
+        pickVideo() {
+            const el = this.$refs.fileAttachment;
+            if (!el) {
+                return;
+            }
+            el.accept = 'video/*';
+            el.value = '';
+            el.click();
+        },
+        clearAttachment() {
+            const el = this.$refs.fileAttachment;
+            if (el) {
+                el.value = '';
+            }
+            this.pendingVoiceBlob = null;
+        },
+        stopMicTracks() {
+            if (this._recordStream) {
+                this._recordStream.getTracks().forEach((t) => t.stop());
+            }
+            this._recordStream = null;
+            this._mediaRecorder = null;
+        },
+        async toggleVoiceRecord() {
+            if (this.recording) {
+                const mr = this._mediaRecorder;
+                if (mr && mr.state === 'recording') {
+                    await new Promise((resolve) => {
+                        mr.addEventListener('stop', () => resolve(), { once: true });
+                        mr.stop();
+                    });
+                }
+                this.recording = false;
+                return;
+            }
+            if (!navigator.mediaDevices?.getUserMedia) {
+                this.replyError = 'Voice recording is not supported in this browser.';
+                return;
+            }
+            this.replyError = '';
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                this.stopMicTracks();
+                this._recordStream = stream;
+                const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                    ? 'audio/webm;codecs=opus'
+                    : MediaRecorder.isTypeSupported('audio/webm')
+                      ? 'audio/webm'
+                      : '';
+                const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+                const chunks = [];
+                rec.ondataavailable = (ev) => {
+                    if (ev.data.size) {
+                        chunks.push(ev.data);
+                    }
+                };
+                rec.onstop = () => {
+                    const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+                    if (blob.size > 0) {
+                        this.pendingVoiceBlob = blob;
+                    }
+                    this.stopMicTracks();
+                };
+                rec.start();
+                this._mediaRecorder = rec;
+                this.recording = true;
+            } catch {
+                this.replyError = 'Microphone permission denied or unavailable.';
+                this.recording = false;
+                this.stopMicTracks();
+            }
         },
         async sendReply(event) {
             const form = event.target;
@@ -40,7 +149,18 @@ document.addEventListener('alpine:init', () => {
             event.preventDefault();
             this.replyError = '';
             const ta = form.querySelector('textarea[name="body"]');
+            const fileEl = this.$refs.fileAttachment;
+            const hasFile = fileEl?.files?.length > 0;
+            const body = (ta?.value ?? '').trim();
+            if (!hasFile && body === '' && !this.pendingVoiceBlob) {
+                this.replyError = 'Add text, an emoji, a photo, video, or voice note.';
+                return;
+            }
             const fd = new FormData(form);
+            if (this.pendingVoiceBlob) {
+                fd.set('attachment', this.pendingVoiceBlob, 'voice.webm');
+                fd.set('voice_note', '1');
+            }
             fd.append('sync_list', '1');
             fd.append('list_assignee', this.listAssignee || 'all');
             if (this.listAccount) {
@@ -65,10 +185,15 @@ document.addEventListener('alpine:init', () => {
                 }
                 if (!res.ok) {
                     const bodyErr = data.errors?.body;
+                    const attErr = data.errors?.attachment;
                     if (Array.isArray(bodyErr) && bodyErr.length) {
                         this.replyError = bodyErr[0];
                     } else if (typeof bodyErr === 'string') {
                         this.replyError = bodyErr;
+                    } else if (Array.isArray(attErr) && attErr.length) {
+                        this.replyError = attErr[0];
+                    } else if (typeof attErr === 'string') {
+                        this.replyError = attErr;
                     } else if (data.message) {
                         this.replyError = data.message;
                     } else {
@@ -81,6 +206,11 @@ document.addEventListener('alpine:init', () => {
                     ta.value = '';
                     ta.style.height = 'auto';
                 }
+                this.pendingVoiceBlob = null;
+                if (fileEl) {
+                    fileEl.value = '';
+                }
+                this.emojiOpen = false;
             } catch {
                 this.replyError = 'Send failed';
             }

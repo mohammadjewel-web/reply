@@ -160,4 +160,101 @@ class MessengerGraphService
 
         return ['ok' => true, 'message_id' => $id ? (string) $id : null, 'error' => null];
     }
+
+    /**
+     * @param  string  $attachmentType  image|video|audio|file
+     * @return array{ok: bool, message_id: ?string, error: ?string}
+     */
+    public function sendAttachmentForChannel(
+        ChannelAccount $account,
+        string $recipientPsid,
+        string $attachmentType,
+        string $absolutePath,
+        string $filename,
+    ): array {
+        $token = $this->pageAccessTokenForChannel($account);
+        if (! $token) {
+            Log::warning('Messenger send skipped: missing page access token for channel account', ['account_id' => $account->id]);
+
+            return ['ok' => false, 'message_id' => null, 'error' => 'Missing page access token for this connection'];
+        }
+
+        $attachmentId = $this->uploadMessengerAttachment($token, $absolutePath, $filename, $attachmentType);
+        if (! $attachmentId) {
+            return ['ok' => false, 'message_id' => null, 'error' => 'Messenger attachment upload failed'];
+        }
+
+        return $this->postMessengerAttachmentMessage($token, $recipientPsid, $attachmentType, $attachmentId);
+    }
+
+    /**
+     * @return array{ok: bool, message_id: ?string, error: ?string}
+     */
+    private function postMessengerAttachmentMessage(
+        string $token,
+        string $recipientPsid,
+        string $attachmentType,
+        string $attachmentId,
+    ): array {
+        $version = config('services.messenger.graph_version', 'v21.0');
+        $url = "https://graph.facebook.com/{$version}/me/messages";
+
+        $response = Http::withToken($token)->post($url, [
+            'recipient' => ['id' => $recipientPsid],
+            'messaging_type' => 'RESPONSE',
+            'message' => [
+                'attachment' => [
+                    'type' => $attachmentType,
+                    'payload' => ['attachment_id' => $attachmentId],
+                ],
+            ],
+        ]);
+
+        if (! $response->successful()) {
+            Log::error('Messenger attachment send failed', ['body' => $response->body()]);
+
+            return ['ok' => false, 'message_id' => null, 'error' => $response->body()];
+        }
+
+        $id = $response->json('message_id');
+
+        return ['ok' => true, 'message_id' => $id ? (string) $id : null, 'error' => null];
+    }
+
+    private function uploadMessengerAttachment(
+        string $token,
+        string $absolutePath,
+        string $filename,
+        string $attachmentType,
+    ): ?string {
+        $version = config('services.messenger.graph_version', 'v21.0');
+        $url = "https://graph.facebook.com/{$version}/me/message_attachments";
+
+        $message = json_encode([
+            'attachment' => [
+                'type' => $attachmentType,
+                'payload' => ['is_reusable' => true],
+            ],
+        ]);
+        if ($message === false) {
+            Log::error('Messenger attachment upload: json_encode failed');
+
+            return null;
+        }
+
+        $response = Http::withToken($token)
+            ->timeout(120)
+            ->attach('filedata', file_get_contents($absolutePath), $filename)
+            ->post($url, ['message' => $message]);
+
+        if (! $response->successful()) {
+            Log::error('Messenger attachment upload failed', ['body' => $response->body()]);
+
+            return null;
+        }
+
+        $aid = $response->json('attachment_id');
+
+        return $aid ? (string) $aid : null;
+    }
 }

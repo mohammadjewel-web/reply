@@ -43,20 +43,16 @@
                 {{-- Conversation list --}}
                 {{-- Mobile drawer backdrop --}}
                 <div
-                    class="fixed inset-0 z-20 bg-slate-900/40 backdrop-blur-[1px] md:hidden"
-                    x-show="mobileListOpen"
-                    x-transition.opacity
-                    x-on:click="mobileListOpen = false"
-                    x-cloak
+                    data-inbox-mobile-backdrop
+                    data-inbox-act="closeMobileList"
+                    class="fixed inset-0 z-20 bg-slate-900/40 backdrop-blur-[1px] md:hidden {{ $active ? 'hidden' : '' }}"
                     aria-hidden="true"
                 ></div>
 
-                {{-- Mobile drawer list --}}
+                {{-- Mobile drawer list (visibility via inboxPage.syncMobileListDom — not Alpine x-show). --}}
                 <aside
-                    class="fixed inset-x-0 top-0 bottom-0 z-30 flex w-full shrink-0 flex-col border-b border-slate-200 bg-white shadow-2xl md:hidden"
-                    x-show="mobileListOpen"
-                    x-transition
-                    x-cloak
+                    data-inbox-mobile-drawer
+                    class="fixed inset-x-0 top-0 bottom-0 z-30 flex w-full shrink-0 flex-col border-b border-slate-200 bg-white shadow-2xl md:hidden {{ $active ? 'hidden' : '' }}"
                 >
                     <div class="border-b border-slate-100 bg-slate-50/95 px-3 py-3 sm:px-4">
                         <div class="flex items-center justify-between gap-2">
@@ -67,7 +63,7 @@
                             <button
                                 type="button"
                                 class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 md:hidden"
-                                x-on:click="mobileListOpen = false"
+                                data-inbox-act="closeMobileList"
                                 title="{{ __('Close') }}"
                             >
                                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -217,7 +213,7 @@
                             <button
                                 type="button"
                                 class="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-full bg-white/15 px-3 text-xs font-semibold text-white hover:bg-white/25 md:hidden"
-                                x-on:click="mobileListOpen = true"
+                                data-inbox-act="openMobileList"
                                 title="{{ __('Chats') }}"
                             >
                                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h10"/></svg>
@@ -252,10 +248,7 @@
                             </form>
                         </div>
 
-                        <div
-                            class="relative flex min-h-0 flex-1 flex-col"
-                            x-init="$nextTick(() => scrollToEnd())"
-                        >
+                        <div class="relative flex min-h-0 flex-1 flex-col">
                             <div
                                 class="pointer-events-none absolute inset-0 opacity-[0.35] [background-image:radial-gradient(circle_at_1px_1px,rgb(148_163_184/0.45)_1px,transparent_0)] [background-size:20px_20px]"
                                 aria-hidden="true"

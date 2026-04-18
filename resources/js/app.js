@@ -33,12 +33,32 @@ document.addEventListener('alpine:init', () => {
             this.$watch('pendingVoiceBlob', () => this.syncComposerUi());
             this.$watch('hasPendingFile', () => this.syncComposerUi());
             this.$watch('recording', () => this.syncComposerUi());
+            this.$watch('mobileListOpen', () => this.syncMobileListDom());
+            this.syncMobileListDom();
+            this.$nextTick(() => inboxScrollToEnd());
             this.listClickBound = (e) => {
                 if (e.target.closest('a.js-inbox-thread-link')) {
                     this.mobileListOpen = false;
                 }
             };
             this.$el.addEventListener('click', this.listClickBound);
+        },
+        openMobileList() {
+            this.mobileListOpen = true;
+        },
+        closeMobileList() {
+            this.mobileListOpen = false;
+        },
+        syncMobileListDom() {
+            const backdrop = this.$el?.querySelector?.('[data-inbox-mobile-backdrop]');
+            const drawer = this.$el?.querySelector?.('[data-inbox-mobile-drawer]');
+            const open = !!this.mobileListOpen;
+            if (backdrop) {
+                backdrop.classList.toggle('hidden', !open);
+            }
+            if (drawer) {
+                drawer.classList.toggle('hidden', !open);
+            }
         },
         syncComposerUi() {
             this.syncEmojiPanelDom();

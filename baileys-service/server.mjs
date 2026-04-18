@@ -58,7 +58,7 @@ const SECRET =
     : 'change-me';
 const AUTH_ROOT = path.join(__dirname, 'auth');
 /** Bump when deploy instructions change — curl /health to confirm the running process picked up new code. */
-const SERVICE_REV = 11;
+const SERVICE_REV = 12;
 
 if (!fs.existsSync(AUTH_ROOT)) {
   fs.mkdirSync(AUTH_ROOT, { recursive: true });
@@ -483,6 +483,7 @@ app.get('/health', (req, res) => {
     rev: SERVICE_REV,
     /** false → Node is using default "change-me"; Laravel must match or set baileys-service/.env */
     secretConfigured: secretFromEnv,
+    routes: { sendMedia: true },
   });
 });
 

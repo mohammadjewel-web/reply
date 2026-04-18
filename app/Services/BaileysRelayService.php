@@ -169,7 +169,21 @@ class BaileysRelayService
         }
 
         if (! $response->successful()) {
-            $err = $response->json('error') ?? $response->body();
+            $body = $response->body();
+            if (self::responseLooksLikeMissingSendMediaRoute($response, $body)) {
+                return [
+                    'ok' => false,
+                    'message_id' => null,
+                    'error' => __(
+                        'WhatsApp media send failed: the Baileys Node process does not handle POST /session/send-media (usually an old deploy). On the server: pull latest code, cd baileys-service, run npm install, restart Node (pm2/systemd/nohup). Check curl -s :url/health — expect rev 12+ and routes.sendMedia true. Laravel is posting to :endpoint.',
+                        [
+                            'url' => $base.'/health',
+                            'endpoint' => $base.'/session/send-media',
+                        ]
+                    ),
+                ];
+            }
+            $err = $response->json('error') ?? $body;
 
             return ['ok' => false, 'message_id' => null, 'error' => is_string($err) ? $err : json_encode($err)];
         }
@@ -177,5 +191,20 @@ class BaileysRelayService
         $id = $response->json('messageId');
 
         return ['ok' => true, 'message_id' => $id ? (string) $id : null, 'error' => null];
+    }
+
+    /**
+     * Express returns HTML "Cannot POST /session/send-media" when the route is not registered (old server.mjs).
+     */
+    private static function responseLooksLikeMissingSendMediaRoute(\Illuminate\Http\Client\Response $response, string $body): bool
+    {
+        if (str_contains($body, 'Cannot POST /session/send-media')) {
+            return true;
+        }
+        if ($response->status() === 404 && str_contains($body, 'Cannot POST')) {
+            return true;
+        }
+
+        return false;
     }
 }

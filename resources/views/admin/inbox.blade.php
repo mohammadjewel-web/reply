@@ -22,11 +22,14 @@
         <div
             class="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col px-0 sm:px-2"
             data-inbox-page
+            data-inbox-live
+            data-inbox-conversation-id="{{ $active?->id ? (string) $active->id : '' }}"
+            data-inbox-poll-url="{{ route('inbox.poll', [], false) }}"
+            data-inbox-last-message-id="{{ (int) ($active ? ($messages->max('id') ?? 0) : 0) }}"
+            data-inbox-list-assignee="{{ request('assignee', 'all') }}"
+            data-inbox-list-account="{{ request('account') ?? '' }}"
             x-data="inboxPage({
                 mobileListOpen: @json(! $showThreadMobile),
-                lastMessageId: @json((int) ($active ? ($messages->max('id') ?? 0) : 0)),
-                conversationId: @json($active?->id),
-                pollUrl: @json(route('inbox.poll', [], false)),
                 listAssignee: @json(request('assignee', 'all')),
                 listAccount: @json(request('account')),
             })"
@@ -220,11 +223,11 @@
                                 {{ __('Chats') }}
                             </button>
                             <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/30 bg-white/20 text-sm font-bold">
-                                <span x-ref="inboxHdrAvatarLetter" class="leading-none">{{ $active->inboxContactAvatarLetter() }}</span>
+                                <span data-inbox-hdr-avatar class="leading-none">{{ $active->inboxContactAvatarLetter() }}</span>
                             </div>
                             <div class="min-w-0 flex-1">
-                                <h3 x-ref="inboxHdrTitle" class="truncate text-[15px] font-semibold leading-tight">{{ $active->inboxContactTitle() }}</h3>
-                                <p x-ref="inboxHdrSub" class="truncate text-xs text-white/85">{{ $active->inboxHeaderSubtitlePlain() }}</p>
+                                <h3 data-inbox-hdr-title class="truncate text-[15px] font-semibold leading-tight">{{ $active->inboxContactTitle() }}</h3>
+                                <p data-inbox-hdr-sub class="truncate text-xs text-white/85">{{ $active->inboxHeaderSubtitlePlain() }}</p>
                             </div>
                             <form method="post" action="{{ $assignAction }}" class="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap md:max-w-[min(100%,22rem)]">
                                 @csrf

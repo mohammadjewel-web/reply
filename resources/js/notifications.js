@@ -80,6 +80,7 @@ export function initNotifications() {
             const res = await fetch(pollUrl, {
                 headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                 credentials: 'same-origin',
+                cache: 'no-store',
             });
             if (!res.ok) return;
             const data = await res.json();

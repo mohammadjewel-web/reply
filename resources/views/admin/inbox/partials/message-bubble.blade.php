@@ -11,11 +11,28 @@
     }
     $om = is_array($m->payload) ? ($m->payload['outbound_media'] ?? null) : null;
     $im = is_array($m->payload) ? ($m->payload['inbound_media'] ?? null) : null;
-    $media = is_array($om) ? $om : (is_array($im) ? $im : null);
-    $mediaPath = is_array($media) && ! empty($media['path']) ? $media['path'] : null;
-    $mediaKind = is_array($media) ? ($media['kind'] ?? '') : '';
+    /** Prefer outbound only when a file path exists; otherwise inbound media is skipped if payload had e.g. outbound_media: [] */
+    $media = null;
+    if (is_array($om) && filled($om['path'] ?? null)) {
+        $media = $om;
+    } elseif (is_array($im) && filled($im['path'] ?? null)) {
+        $media = $im;
+    }
+    $mediaPath = is_array($media) ? (string) $media['path'] : '';
+    $mediaPath = $mediaPath !== '' ? $mediaPath : null;
+    $mediaKind = is_array($media) ? strtolower(trim((string) ($media['kind'] ?? ''))) : '';
+    $mediaMime = is_array($media) ? strtolower((string) ($media['mime'] ?? '')) : '';
+    if ($mediaPath && $mediaKind === '' && str_starts_with($mediaMime, 'image/')) {
+        $mediaKind = 'image';
+    }
+    if ($mediaPath && $mediaKind === '' && str_starts_with($mediaMime, 'video/')) {
+        $mediaKind = 'video';
+    }
+    if ($mediaPath && $mediaKind === '' && str_starts_with($mediaMime, 'audio/')) {
+        $mediaKind = 'audio';
+    }
     $mediaUrl = $mediaPath
-        ? route('storage.public_file', ['path' => ltrim(str_replace('\\', '/', $mediaPath), '/')], absolute: false)
+        ? route('storage.public_file', ['path' => ltrim(str_replace('\\', '/', $mediaPath), '/')], absolute: true)
         : null;
 @endphp
 <div class="flex w-full {{ $isOutbound ? 'justify-end' : 'justify-start' }}" data-message-id="{{ $m->id }}">

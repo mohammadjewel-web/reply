@@ -37,6 +37,16 @@ function authDir(key) {
   return path.join(AUTH_ROOT, sanitizeKey(key));
 }
 
+function wipeAuthDir(key) {
+  const dir = authDir(key);
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (e) {
+    throw e instanceof Error ? e : new Error(String(e));
+  }
+}
+
 function authMiddleware(req, res, next) {
   const sent = String(req.get('X-Baileys-Secret') ?? '').trim();
   if (sent !== SECRET) {
@@ -48,7 +58,7 @@ function authMiddleware(req, res, next) {
 const MAX_RECONNECT_ATTEMPTS = 12;
 const BASE_RECONNECT_MS = 3000;
 
-/** @type {Map<string, { status: string, qrDataUrl: string | null, error: string | null, sock: ReturnType<typeof makeWASocket> | null, starting: Promise<void> | null, reconnectTimer: ReturnType<typeof setTimeout> | null, reconnectAttempts: number }>} */
+/** @type {Map<string, { status: string, qrDataUrl: string | null, error: string | null, sock: ReturnType<typeof makeWASocket> | null, starting: Promise<void> | null, reconnectTimer: ReturnType<typeof setTimeout> | null, reconnectAttempts: number, logoutClearedOnce: boolean }>} */
 const sessions = new Map();
 
 function getOrCreateSlot(key) {
@@ -65,6 +75,7 @@ function getOrCreateSlot(key) {
       starting: null,
       reconnectTimer: null,
       reconnectAttempts: 0,
+      logoutClearedOnce: false,
     });
   }
   return sessions.get(k);
@@ -110,6 +121,7 @@ async function destroySession(key) {
   }
   clearReconnectTimer(slot);
   slot.reconnectAttempts = 0;
+  slot.logoutClearedOnce = false;
   if (slot.sock) {
     try {
       slot.sock.end(new Error('session_restart'));
@@ -199,8 +211,30 @@ async function attachConnection(rawKey) {
       if (statusCode === DisconnectReason.loggedOut) {
         clearReconnectTimer(slot);
         slot.reconnectAttempts = 0;
+
+        // Stale or revoked on-disk creds often produce immediate "logged out".
+        // Wipe once per user-initiated start and reconnect so a fresh QR can appear.
+        if (!slot.logoutClearedOnce) {
+          slot.logoutClearedOnce = true;
+          try {
+            wipeAuthDir(k);
+          } catch (e) {
+            slot.status = 'error';
+            slot.error = e instanceof Error ? e.message : String(e);
+            return;
+          }
+          slot.status = 'starting';
+          slot.error = null;
+          slot.starting = attachConnection(rawKey).catch((e) => {
+            slot.status = 'error';
+            slot.error = e instanceof Error ? e.message : String(e);
+          });
+          return;
+        }
+
         slot.status = 'logged_out';
-        slot.error = 'Logged out';
+        slot.error =
+          'WhatsApp closed this session (logged out). On the phone: WhatsApp → Settings → Linked devices — remove this session if it appears, then click Generate pairing QR again.';
         return;
       }
 

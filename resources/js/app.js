@@ -226,7 +226,77 @@ document.addEventListener('alpine:init', () => {
     }));
 });
 
+/**
+ * Inbox toolbar lives inside nested Alpine scopes (layout shell x-data + inboxPage).
+ * Calling methods via @click="pickVideo()" can throw ReferenceError in production;
+ * delegate to Alpine.$data on [data-inbox-page] instead.
+ */
+function inboxRootData(el) {
+    const root = el?.closest?.('[data-inbox-page]');
+    if (!root || !window.Alpine || typeof window.Alpine.$data !== 'function') {
+        return null;
+    }
+    try {
+        return window.Alpine.$data(root);
+    } catch {
+        return null;
+    }
+}
+
+function initInboxActionDelegation() {
+    document.addEventListener('click', (event) => {
+        const el = event.target.closest?.('[data-inbox-act]');
+        if (!el) {
+            return;
+        }
+        const d = inboxRootData(el);
+        if (!d) {
+            return;
+        }
+        const act = el.dataset.inboxAct;
+        if (!act) {
+            return;
+        }
+        if (act === 'insertEmoji') {
+            const ch = el.dataset.inboxEmoji ?? '';
+            if (ch && typeof d.insertEmoji === 'function') {
+                d.insertEmoji(ch);
+                d.emojiOpen = false;
+            }
+            return;
+        }
+        if (typeof d[act] !== 'function') {
+            return;
+        }
+        d[act]();
+    });
+
+    document.addEventListener('change', (event) => {
+        const t = event.target;
+        if (!t || t.name !== 'attachment' || !t.closest?.('[data-inbox-page]')) {
+            return;
+        }
+        const d = inboxRootData(t);
+        if (d) {
+            d.hasPendingFile = !!(t.files && t.files.length > 0);
+        }
+    });
+
+    document.addEventListener('submit', (event) => {
+        const form = event.target;
+        if (!form || form.tagName !== 'FORM' || !form.hasAttribute('data-inbox-reply')) {
+            return;
+        }
+        const d = inboxRootData(form);
+        if (!d || typeof d.sendReply !== 'function') {
+            return;
+        }
+        d.sendReply(event);
+    });
+}
+
 Alpine.start();
+initInboxActionDelegation();
 initInboxLive();
 
 document.addEventListener('DOMContentLoaded', () => initNotifications());

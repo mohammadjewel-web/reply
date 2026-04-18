@@ -289,7 +289,7 @@
 
                             <div class="z-10 shrink-0 border-t border-slate-200/80 bg-[#f0f0f0] px-3 py-3 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] sm:px-4">
                                 @if ($canReply)
-                                    <form method="post" action="{{ $replyAction }}" enctype="multipart/form-data" class="flex flex-col gap-2" @submit.prevent="sendReply($event)">
+                                    <form method="post" action="{{ $replyAction }}" enctype="multipart/form-data" class="flex flex-col gap-2" data-inbox-reply>
                                         @csrf
                                         {{-- `display:none` breaks programmatic .click() on file inputs in many browsers; keep input in the layout with sr-only. --}}
                                         <input
@@ -300,7 +300,6 @@
                                             class="sr-only"
                                             tabindex="-1"
                                             accept="image/*,video/*,audio/*"
-                                            @change="hasPendingFile = $event.target.files.length > 0"
                                         />
 
                                         <div
@@ -315,7 +314,8 @@
                                                         type="button"
                                                         class="flex h-9 w-9 items-center justify-center rounded-lg text-xl hover:bg-slate-100"
                                                         x-text="em"
-                                                        @click="insertEmoji(em); emojiOpen = false"
+                                                        data-inbox-act="insertEmoji"
+                                                        :data-inbox-emoji="em"
                                                     ></button>
                                                 </template>
                                             </div>
@@ -327,7 +327,7 @@
                                                     <button
                                                         type="button"
                                                         class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-200/80"
-                                                        @click="toggleEmoji()"
+                                                        data-inbox-act="toggleEmoji"
                                                         title="{{ __('Emoji') }}"
                                                     >
                                                         <span class="text-lg leading-none">😊</span>
@@ -335,7 +335,7 @@
                                                     <button
                                                         type="button"
                                                         class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-200/80"
-                                                        @click="pickPhoto()"
+                                                        data-inbox-act="pickPhoto"
                                                         title="{{ __('Photo') }}"
                                                     >
                                                         <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
@@ -343,7 +343,7 @@
                                                     <button
                                                         type="button"
                                                         class="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-200/80"
-                                                        @click="pickVideo()"
+                                                        data-inbox-act="pickVideo"
                                                         title="{{ __('Video') }}"
                                                     >
                                                         <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
@@ -352,13 +352,13 @@
                                                         type="button"
                                                         class="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-200/80"
                                                         :class="recording ? 'bg-rose-100 text-rose-700 ring-2 ring-rose-400' : 'text-slate-600'"
-                                                        @click="toggleVoiceRecord()"
+                                                        data-inbox-act="toggleVoiceRecord"
                                                         title="{{ __('Voice message') }}"
                                                     >
                                                         <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
                                                     </button>
                                                     <span x-show="pendingVoiceBlob || hasPendingFile" x-cloak class="ms-1 text-[11px] text-slate-500">
-                                                        <button type="button" class="font-medium text-emerald-700 underline" @click="clearAttachment()">{{ __('Clear attachment') }}</button>
+                                                        <button type="button" class="font-medium text-emerald-700 underline" data-inbox-act="clearAttachment">{{ __('Clear attachment') }}</button>
                                                     </span>
                                                 </div>
                                                 <label for="chat-body" class="sr-only">{{ __('Message') }}</label>

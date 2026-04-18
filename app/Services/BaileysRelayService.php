@@ -62,7 +62,9 @@ class BaileysRelayService
             return [
                 'ok' => false,
                 'message_id' => null,
-                'error' => __('Baileys rejected the send (401): use the same BAILEYS_SERVICE_SECRET in Laravel .env and the Node process, then php artisan config:clear and restart Baileys.'),
+                'error' => __(
+                    'Baileys rejected the send (401): BAILEYS_SERVICE_SECRET must match exactly in Laravel .env and baileys-service/.env (or the shell that starts Node). Run php artisan config:clear, restart PHP-FPM/Octane if applicable, restart Baileys. Verify with: curl -s -X POST -H "X-Baileys-Secret: …" http://127.0.0.1:3710/session/ping'
+                ),
             ];
         }
 

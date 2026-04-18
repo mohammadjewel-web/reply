@@ -14,6 +14,41 @@ import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/**
+ * Load baileys-service/.env into process.env (only keys not already set).
+ * Matches Laravel: put the same BAILEYS_SERVICE_SECRET here so nohup/npm start sees it.
+ */
+function loadLocalEnvFile() {
+  const envPath = path.join(__dirname, '.env');
+  if (!fs.existsSync(envPath)) {
+    return;
+  }
+  const raw = fs.readFileSync(envPath, 'utf8');
+  for (const line of raw.split('\n')) {
+    const trimmed = line.replace(/^\uFEFF/, '').trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) {
+      continue;
+    }
+    const key = trimmed.slice(0, eq).trim();
+    let val = trimmed.slice(eq + 1).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+    if (process.env[key] === undefined) {
+      process.env[key] = val;
+    }
+  }
+}
+
+loadLocalEnvFile();
+
 const PORT = Number(process.env.BAILEYS_PORT || 3710);
 const _secretEnv = process.env.BAILEYS_SERVICE_SECRET;
 const SECRET =
@@ -22,7 +57,7 @@ const SECRET =
     : 'change-me';
 const AUTH_ROOT = path.join(__dirname, 'auth');
 /** Bump when deploy instructions change — curl /health to confirm the running process picked up new code. */
-const SERVICE_REV = 6;
+const SERVICE_REV = 7;
 
 if (!fs.existsSync(AUTH_ROOT)) {
   fs.mkdirSync(AUTH_ROOT, { recursive: true });
@@ -404,6 +439,7 @@ app.get('/', (req, res) => {
     <li><code>GET /health</code> — health check (JSON, includes <code>rev</code>)</li>
     <li><code>POST /session/start</code> — start pairing (requires <code>X-Baileys-Secret</code> header)</li>
     <li><code>POST /session/reset</code> — body <code>{"sessionKey":"…"}</code>, clears saved auth for that key</li>
+    <li><code>POST /session/ping</code> — no body; checks <code>X-Baileys-Secret</code></li>
     <li><code>POST /session/send</code> — body <code>{"sessionKey","to","text"}</code> (<code>to</code> = phone digits)</li>
     <li><code>GET /session/:key/status</code> — poll QR / status (requires <code>X-Baileys-Secret</code>)</li>
   </ul>
@@ -413,7 +449,20 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true, service: 'baileys', rev: SERVICE_REV });
+  const secretFromEnv =
+    typeof _secretEnv === 'string' && _secretEnv.trim() !== '';
+  res.json({
+    ok: true,
+    service: 'baileys',
+    rev: SERVICE_REV,
+    /** false → Node is using default "change-me"; Laravel must match or set baileys-service/.env */
+    secretConfigured: secretFromEnv,
+  });
+});
+
+/** Same auth as /session/send — use to verify Laravel and Node agree on BAILEYS_SERVICE_SECRET. */
+app.post('/session/ping', authMiddleware, (req, res) => {
+  res.json({ ok: true });
 });
 
 /**

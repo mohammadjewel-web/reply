@@ -12,7 +12,8 @@ This small Node service pairs a number using **WhatsApp → Linked devices → L
 cd baileys-service
 npm install
 cp .env.example .env
-# Set BAILEYS_SERVICE_SECRET to match Laravel .env
+# Set BAILEYS_SERVICE_SECRET to the same value as Laravel .env (copy/paste the line).
+# The service loads baileys-service/.env on startup so nohup/npm start picks it up without manual export.
 ```
 
 ## Run

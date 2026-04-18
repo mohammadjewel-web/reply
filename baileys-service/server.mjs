@@ -57,7 +57,7 @@ const SECRET =
     : 'change-me';
 const AUTH_ROOT = path.join(__dirname, 'auth');
 /** Bump when deploy instructions change — curl /health to confirm the running process picked up new code. */
-const SERVICE_REV = 8;
+const SERVICE_REV = 9;
 
 if (!fs.existsSync(AUTH_ROOT)) {
   fs.mkdirSync(AUTH_ROOT, { recursive: true });
@@ -205,6 +205,15 @@ async function destroySession(key) {
   slot.status = 'idle';
 }
 
+/** Prefer @s.whatsapp.net JID when WhatsApp maps the chat to an LID (shows real phone in Laravel). */
+function peerJidForIngest(msg) {
+  const alt = msg.key?.remoteJidAlt;
+  if (typeof alt === 'string' && alt.includes('@')) {
+    return alt;
+  }
+  return msg.key.remoteJid;
+}
+
 function summarizeInboundText(msg) {
   const inner = extractMessageContent(msg.message);
   if (!inner) {
@@ -241,7 +250,7 @@ function summarizeInboundText(msg) {
   return t ? `[${t}]` : '[message]';
 }
 
-async function forwardInboundToLaravel(sessionKeyRaw, baileysMsg, notifyType) {
+async function forwardMessageToLaravel(sessionKeyRaw, baileysMsg, notifyType, fromMe) {
   const url = String(process.env.BAILEYS_LARAVEL_WEBHOOK_URL ?? '').trim();
   if (!url) {
     return;
@@ -250,13 +259,15 @@ async function forwardInboundToLaravel(sessionKeyRaw, baileysMsg, notifyType) {
   if (body === null) {
     return;
   }
-  const remote = baileysMsg.key.remoteJid;
+  const peerJid = peerJidForIngest(baileysMsg);
+  const routingJid = baileysMsg.key.remoteJid;
   const ts = baileysMsg.messageTimestamp
     ? Number(baileysMsg.messageTimestamp)
     : undefined;
   const payload = {
     key: baileysMsg.key,
     baileys_type: notifyType,
+    from_me: fromMe,
   };
   try {
     const res = await fetch(url, {
@@ -268,7 +279,9 @@ async function forwardInboundToLaravel(sessionKeyRaw, baileysMsg, notifyType) {
       },
       body: JSON.stringify({
         session_key: sessionKeyRaw,
-        from: remote,
+        from: peerJid,
+        routing_jid: routingJid,
+        from_me: fromMe,
         body,
         external_message_id: baileysMsg.key.id ?? undefined,
         message_timestamp: Number.isFinite(ts) ? ts : undefined,
@@ -328,18 +341,19 @@ async function attachConnection(rawKey) {
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') {
+    if (type !== 'notify' && type !== 'append') {
       return;
     }
     for (const msg of messages) {
-      if (!msg.message || msg.key.fromMe) {
+      if (!msg.message) {
         continue;
       }
-      const remote = msg.key.remoteJid;
-      if (!remote || remote === 'status@broadcast' || remote.endsWith('@g.us')) {
+      const routing = msg.key.remoteJid;
+      if (!routing || routing === 'status@broadcast' || routing.endsWith('@g.us')) {
         continue;
       }
-      await forwardInboundToLaravel(rawKey, msg, type);
+      const fromMe = Boolean(msg.key.fromMe);
+      await forwardMessageToLaravel(rawKey, msg, type, fromMe);
     }
   });
 

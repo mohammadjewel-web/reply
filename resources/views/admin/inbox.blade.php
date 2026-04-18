@@ -117,11 +117,11 @@
                                class="flex items-center gap-3 border-b border-slate-50 px-3 py-3 transition-colors hover:bg-slate-50 sm:px-4 {{ $active && $active->id === $c->id ? 'border-s-[3px] border-s-emerald-600 bg-emerald-50/90' : '' }}">
                                 <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white shadow-inner
                                     {{ $c->platform === 'whatsapp' ? 'bg-gradient-to-br from-green-500 to-green-700' : 'bg-gradient-to-br from-blue-500 to-blue-700' }}">
-                                    {{ strtoupper(mb_substr((string) ($c->display_name ?? $c->external_thread_key), 0, 1)) }}
+                                    {{ $c->inboxContactAvatarLetter() }}
                                 </div>
                                 <div class="min-w-0 flex-1">
                                     <div class="flex items-center justify-between gap-2">
-                                        <span class="truncate font-medium text-slate-900">{{ $c->display_name ?? $c->external_thread_key }}</span>
+                                        <span class="truncate font-medium text-slate-900">{{ $c->inboxContactTitle() }}</span>
                                         <span class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide
                                             {{ $c->platform === 'whatsapp' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800' }}">
                                             {{ $c->platform === 'whatsapp' ? 'WA' : 'FB' }}
@@ -218,11 +218,11 @@
                                class="flex items-center gap-3 border-b border-slate-50 px-3 py-3 transition-colors hover:bg-slate-50 sm:px-4 {{ $active && $active->id === $c->id ? 'border-s-[3px] border-s-emerald-600 bg-emerald-50/90' : '' }}">
                                 <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white shadow-inner
                                     {{ $c->platform === 'whatsapp' ? 'bg-gradient-to-br from-green-500 to-green-700' : 'bg-gradient-to-br from-blue-500 to-blue-700' }}">
-                                    {{ strtoupper(mb_substr((string) ($c->display_name ?? $c->external_thread_key), 0, 1)) }}
+                                    {{ $c->inboxContactAvatarLetter() }}
                                 </div>
                                 <div class="min-w-0 flex-1">
                                     <div class="flex items-center justify-between gap-2">
-                                        <span class="truncate font-medium text-slate-900">{{ $c->display_name ?? $c->external_thread_key }}</span>
+                                        <span class="truncate font-medium text-slate-900">{{ $c->inboxContactTitle() }}</span>
                                         <span class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide
                                             {{ $c->platform === 'whatsapp' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800' }}">
                                             {{ $c->platform === 'whatsapp' ? 'WA' : 'FB' }}
@@ -278,10 +278,10 @@
                                 {{ __('Chats') }}
                             </button>
                             <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/30 bg-white/20 text-sm font-bold">
-                                {{ strtoupper(mb_substr((string) ($active->display_name ?? $active->external_thread_key), 0, 1)) }}
+                                {{ $active->inboxContactAvatarLetter() }}
                             </div>
                             <div class="min-w-0 flex-1">
-                                <h3 class="truncate text-[15px] font-semibold leading-tight">{{ $active->display_name ?? $active->external_thread_key }}</h3>
+                                <h3 class="truncate text-[15px] font-semibold leading-tight">{{ $active->inboxContactTitle() }}</h3>
                                 <p class="truncate text-xs text-white/85">
                                     @if ($active->platform === 'whatsapp')
                                         {{ __('WhatsApp') }}
@@ -293,7 +293,11 @@
                                     @else
                                         · {{ __('Connection removed') }}
                                     @endif
-                                    · {{ $active->external_thread_key }}
+                                    @if ($active->platform === 'whatsapp' && ($waSub = $active->inboxContactSecondaryLine()))
+                                        · {{ $waSub }}
+                                    @elseif ($active->platform === 'messenger')
+                                        · {{ $active->external_thread_key }}
+                                    @endif
                                 </p>
                             </div>
                             <form method="post" action="{{ $assignAction }}" class="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap md:max-w-[min(100%,22rem)]">
@@ -372,7 +376,7 @@
                                             @unless ($isOutbound)
                                                 <div class="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white
                                                     {{ $active->platform === 'whatsapp' ? 'bg-green-600' : 'bg-blue-600' }}">
-                                                    {{ strtoupper(mb_substr((string) ($active->display_name ?: $active->external_thread_key ?: '?'), 0, 1)) }}
+                                                    {{ $active->inboxContactAvatarLetter() }}
                                                 </div>
                                             @endunless
                                             <div class="group relative">
@@ -388,6 +392,8 @@
                                                     </span>
                                                     @if ($isOutbound && $m->user)
                                                         <span class="text-[11px] text-slate-400">· {{ $m->user->name }}</span>
+                                                    @elseif ($isOutbound && ! $m->user && $active->platform === 'whatsapp')
+                                                        <span class="text-[11px] text-slate-400">· {{ __('Sent from WhatsApp') }}</span>
                                                     @endif
                                                 </div>
                                             </div>

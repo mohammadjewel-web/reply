@@ -22,6 +22,8 @@ class MessageIngestService
         ?array $payload,
         ?Carbon $sentAt = null,
         ?string $baileysRemoteJid = null,
+        string $direction = ChannelMessage::DIRECTION_INBOUND,
+        bool $notify = true,
     ): ChannelMessage {
         $platform = $account->type === ChannelAccount::TYPE_WHATSAPP
             ? Conversation::PLATFORM_WHATSAPP
@@ -39,11 +41,12 @@ class MessageIngestService
             ]
         );
 
-        if ($displayName && $conversation->display_name !== $displayName) {
+        if ($direction === ChannelMessage::DIRECTION_INBOUND && $displayName && $conversation->display_name !== $displayName) {
             $conversation->update(['display_name' => $displayName]);
         }
 
         $this->syncBaileysRemoteJid($conversation, $baileysRemoteJid);
+        $this->syncWhatsappDisplayPhone($conversation, $externalThreadKey, $baileysRemoteJid);
 
         if ($externalMessageId) {
             $existing = ChannelMessage::query()
@@ -52,6 +55,7 @@ class MessageIngestService
                 ->first();
             if ($existing) {
                 $this->syncBaileysRemoteJid($existing->conversation, $baileysRemoteJid);
+                $this->syncWhatsappDisplayPhone($existing->conversation, $externalThreadKey, $baileysRemoteJid);
 
                 return $existing;
             }
@@ -61,16 +65,19 @@ class MessageIngestService
 
         $message = ChannelMessage::query()->create([
             'conversation_id' => $conversation->id,
-            'direction' => ChannelMessage::DIRECTION_INBOUND,
+            'direction' => $direction,
             'external_message_id' => $externalMessageId,
             'body' => $body,
             'payload' => $payload,
             'sent_at' => $sentAt,
+            'user_id' => null,
         ]);
 
         $conversation->update(['last_message_at' => $sentAt]);
 
-        $this->inboundNotifier->notify($message);
+        if ($notify && $direction === ChannelMessage::DIRECTION_INBOUND) {
+            $this->inboundNotifier->notify($message);
+        }
 
         return $message;
     }
@@ -89,6 +96,37 @@ class MessageIngestService
             return;
         }
         $meta['baileys_remote_jid'] = $remoteJid;
+        $conversation->update(['metadata' => $meta]);
+    }
+
+    /**
+     * Store E.164-style label for inbox headers (Cloud + Baileys), independent of profile display names.
+     */
+    private function syncWhatsappDisplayPhone(Conversation $conversation, string $externalThreadKey, ?string $baileysRemoteJid): void
+    {
+        if ($conversation->platform !== Conversation::PLATFORM_WHATSAPP) {
+            return;
+        }
+        $digits = null;
+        if (preg_match('/^\d{8,15}$/', $externalThreadKey)) {
+            $digits = $externalThreadKey;
+        }
+        if ($digits === null && $baileysRemoteJid && str_ends_with($baileysRemoteJid, '@s.whatsapp.net')) {
+            $local = explode('@', $baileysRemoteJid, 2)[0];
+            $d = preg_replace('/\D+/', '', $local) ?? '';
+            if ($d !== '' && strlen($d) >= 8) {
+                $digits = $d;
+            }
+        }
+        if ($digits === null) {
+            return;
+        }
+        $e164 = '+'.$digits;
+        $meta = $conversation->metadata ?? [];
+        if (($meta['wa_e164'] ?? null) === $e164) {
+            return;
+        }
+        $meta['wa_e164'] = $e164;
         $conversation->update(['metadata' => $meta]);
     }
 }

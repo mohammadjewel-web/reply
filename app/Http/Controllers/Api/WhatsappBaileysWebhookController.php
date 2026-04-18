@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ChannelAccount;
+use App\Models\ChannelMessage;
 use App\Services\MessageIngestService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -34,6 +35,8 @@ class WhatsappBaileysWebhookController extends Controller
         $data = $request->validate([
             'session_key' => ['required', 'string', 'max:200'],
             'from' => ['required', 'string', 'max:128'],
+            'routing_jid' => ['nullable', 'string', 'max:128'],
+            'from_me' => ['sometimes', 'boolean'],
             'body' => ['nullable', 'string', 'max:65535'],
             'external_message_id' => ['nullable', 'string', 'max:128'],
             'message_timestamp' => ['nullable', 'integer'],
@@ -61,6 +64,7 @@ class WhatsappBaileysWebhookController extends Controller
         }
 
         $threadKey = $this->normalizeJidToThreadKey($data['from']);
+        $routingJid = trim((string) ($data['routing_jid'] ?? $data['from']));
         $body = (string) ($data['body'] ?? '');
         if ($body === '') {
             $body = '[message]';
@@ -71,6 +75,9 @@ class WhatsappBaileysWebhookController extends Controller
             $sentAt = Carbon::createFromTimestamp((int) $data['message_timestamp']);
         }
 
+        $fromMe = (bool) ($data['from_me'] ?? false);
+        $direction = $fromMe ? ChannelMessage::DIRECTION_OUTBOUND : ChannelMessage::DIRECTION_INBOUND;
+
         $this->ingest->ingestInbound(
             $account,
             $threadKey,
@@ -79,7 +86,9 @@ class WhatsappBaileysWebhookController extends Controller
             $data['external_message_id'] ?? null,
             $data['payload'] ?? null,
             $sentAt,
-            trim($data['from']),
+            $routingJid,
+            $direction,
+            ! $fromMe,
         );
 
         return response('OK', 200);

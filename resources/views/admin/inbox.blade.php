@@ -218,8 +218,8 @@
                                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h10"/></svg>
                                 {{ __('Chats') }}
                             </button>
-                            <div x-ref="inboxHdrAvatar" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/30 bg-white/20 text-sm font-bold">
-                                {{ $active->inboxContactAvatarLetter() }}
+                            <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/30 bg-white/20 text-sm font-bold">
+                                <span x-ref="inboxHdrAvatarLetter" class="leading-none">{{ $active->inboxContactAvatarLetter() }}</span>
                             </div>
                             <div class="min-w-0 flex-1">
                                 <h3 x-ref="inboxHdrTitle" class="truncate text-[15px] font-semibold leading-tight">{{ $active->inboxContactTitle() }}</h3>

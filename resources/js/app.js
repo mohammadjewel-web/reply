@@ -17,6 +17,8 @@ document.addEventListener('alpine:init', () => {
         pollTimer: null,
         pollInFlight: false,
         onVisBound: null,
+        onFocusBound: null,
+        onOnlineBound: null,
         listClickBound: null,
         /** Do not name this `init` — Alpine reserves `init` and behavior differs from x-init. */
         inboxStart() {
@@ -36,8 +38,12 @@ document.addEventListener('alpine:init', () => {
                 }
             };
             document.addEventListener('visibilitychange', this.onVisBound);
-            this.pollTimer = setInterval(() => this.poll(), 2500);
-            setTimeout(() => this.poll(), 400);
+            this.onFocusBound = () => this.poll();
+            window.addEventListener('focus', this.onFocusBound);
+            this.onOnlineBound = () => this.poll();
+            window.addEventListener('online', this.onOnlineBound);
+            this.pollTimer = setInterval(() => this.poll(), 2000);
+            setTimeout(() => this.poll(), 300);
         },
         destroy() {
             if (this.listClickBound && this.$el) {
@@ -48,6 +54,14 @@ document.addEventListener('alpine:init', () => {
                 document.removeEventListener('visibilitychange', this.onVisBound);
             }
             this.onVisBound = null;
+            if (this.onFocusBound) {
+                window.removeEventListener('focus', this.onFocusBound);
+            }
+            this.onFocusBound = null;
+            if (this.onOnlineBound) {
+                window.removeEventListener('online', this.onOnlineBound);
+            }
+            this.onOnlineBound = null;
             if (this.pollTimer) {
                 clearInterval(this.pollTimer);
             }
@@ -65,17 +79,46 @@ document.addEventListener('alpine:init', () => {
             if (!html || !this.$refs.thread) {
                 return;
             }
-            const empty = this.$refs.thread.querySelector('[data-inbox-empty]');
+            const trimmed = String(html).trim();
+            if (!trimmed) {
+                return;
+            }
+            const tpl = document.createElement('template');
+            tpl.innerHTML = trimmed;
+            const thread = this.$refs.thread;
+            const toAppend = [];
+            for (const node of tpl.content.children) {
+                if (node.nodeType !== Node.ELEMENT_NODE) {
+                    continue;
+                }
+                const mid = node.getAttribute('data-message-id');
+                if (mid && thread.querySelector(`[data-message-id="${CSS.escape(mid)}"]`)) {
+                    continue;
+                }
+                toAppend.push(node);
+            }
+            if (!toAppend.length) {
+                return;
+            }
+            const empty = thread.querySelector('[data-inbox-empty]');
             if (empty) {
                 empty.remove();
             }
-            const tpl = document.createElement('template');
-            tpl.innerHTML = String(html).trim();
-            const nodes = Array.from(tpl.content.children);
-            if (nodes.length) {
-                this.$refs.thread.append(...nodes);
+            for (const node of toAppend) {
+                thread.appendChild(node);
             }
             this.scrollToEnd();
+        },
+        syncLastMessageIdFromPoll(data) {
+            const raw = data?.last_message_id;
+            if (raw === undefined || raw === null || raw === '') {
+                return;
+            }
+            const n = Number(raw);
+            if (!Number.isFinite(n)) {
+                return;
+            }
+            this.lastMessageId = Math.max(this.lastMessageId, n);
         },
         applyContactPatch(contact) {
             if (!contact) {
@@ -87,8 +130,8 @@ document.addEventListener('alpine:init', () => {
             if (this.$refs.inboxHdrSub) {
                 this.$refs.inboxHdrSub.textContent = contact.subtitle ?? '';
             }
-            if (this.$refs.inboxHdrAvatar) {
-                this.$refs.inboxHdrAvatar.textContent = contact.avatar ?? '';
+            if (this.$refs.inboxHdrAvatarLetter) {
+                this.$refs.inboxHdrAvatarLetter.textContent = contact.avatar ?? '';
             }
         },
         applyListHtml(html) {
@@ -121,13 +164,15 @@ document.addEventListener('alpine:init', () => {
                 if (!res.ok) {
                     return;
                 }
+                const ct = (res.headers.get('content-type') || '').toLowerCase();
+                if (!ct.includes('application/json')) {
+                    return;
+                }
                 const data = await res.json();
                 if (data.messages_html) {
                     this.appendMessagesHtml(data.messages_html);
                 }
-                if (typeof data.last_message_id === 'number') {
-                    this.lastMessageId = data.last_message_id;
-                }
+                this.syncLastMessageIdFromPoll(data);
                 this.applyContactPatch(data.contact);
                 if (data.list_html) {
                     this.applyListHtml(data.list_html);
@@ -184,9 +229,7 @@ document.addEventListener('alpine:init', () => {
                 if (data.messages_html) {
                     this.appendMessagesHtml(data.messages_html);
                 }
-                if (typeof data.last_message_id === 'number') {
-                    this.lastMessageId = data.last_message_id;
-                }
+                this.syncLastMessageIdFromPoll(data);
                 this.applyContactPatch(data.contact);
                 if (data.list_html) {
                     this.applyListHtml(data.list_html);
